@@ -20,3 +20,12 @@ Local LLM:
 ```
 ollama pull sweaterdog/andy-4:micro-q8_0 && ollama pull embeddinggemma
 ```
+
+## Running
+1) Launch ollama
+2) Open Minecraft Launcher and launch Version 1.21.1
+3) Go to single player and open a single player world
+4) Once you are in the world, press "esc" and select "open to LAN"
+5) Enter port number 55916
+6) In the root directory run `node main.js`
+7) If there are no errors in the terminal Janet should join your game

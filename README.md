@@ -1,12 +1,26 @@
 # Games 4 MC Companion
 
+## Cloning code
 
+1) Make a fork on this repository
+2) Clone your fork to your computer
 
-## Getting started
+## Pushing code
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+1) Push the code back to your own fork
+2) Create a merge request (then I'll look through the changes and approve)
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+## Installation
+Mindcraft files:  
+1) run "npm install" in the root directory
+
+Local LLM:
+1) Install ollama
+2) Run the following command to install the mindcraft LLM model:
+```
+ollama pull sweaterdog/andy-4:micro-q8_0 && ollama pull embeddinggemma
+```
+
 
 ## Add your files
 

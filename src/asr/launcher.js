@@ -10,7 +10,7 @@
  */
 
 import { spawn, execSync } from 'child_process';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync, rmSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -45,39 +45,77 @@ function getSystemPython() {
 }
 
 /**
- * Ensure a Python venv exists and dependencies are installed.
+ * Validates dependencies and reinstalls if any are missing or mismatched.
  */
 function ensureVenv(componentDir, label) {
     const venvDir = path.join(componentDir, '.venv');
-    const venvPython = getVenvPython(venvDir);
     const requirementsFile = path.join(componentDir, 'requirements.txt');
+    
+    // Determine venv python path (Windows vs Unix)
+    const isWin = process.platform === 'win32';
+    const venvPython = path.join(venvDir, isWin ? 'Scripts' : 'bin', isWin ? 'python.exe' : 'python');
+    const sysPython = 'py'; // Using 'py' launcher as discussed for Windows safety
 
-    if (existsSync(venvPython)) {
-        console.log(`[ASR] ${label}: venv found`);
-        return venvPython;
-    }
+    let needsReinstall = false;
 
-    console.log(`[ASR] ${label}: creating venv and installing dependencies...`);
-    const sysPython = getSystemPython();
-
-    try {
-        execSync(`${sysPython} -m venv ${venvDir}`, { cwd: componentDir, stdio: 'inherit' });
-    } catch (err) {
-        console.error(`[ASR] ${label}: failed to create venv: ${err.message}`);
-        return null;
-    }
-
-    if (existsSync(requirementsFile)) {
+    if (!existsSync(venvPython)) {
+        console.log(`[${label}] No venv found. Initializing...`);
+        needsReinstall = true;
+    } else if (existsSync(requirementsFile)) {
+        console.log(`[${label}] Checking dependencies...`);
         try {
-            execSync(`${venvPython} -m pip install --upgrade pip -q`, { cwd: componentDir, stdio: 'inherit' });
-            execSync(`${venvPython} -m pip install -r requirements.txt -q`, { cwd: componentDir, stdio: 'inherit' });
+            // 1. Get list of currently installed packages
+            const installed = execSync(`"${venvPython}" -m pip freeze`, { encoding: 'utf-8' }).toLowerCase();
+            
+            // 2. Read requirements.txt and filter for actual package names
+            const requirements = readFileSync(requirementsFile, 'utf-8')
+                .split('\n')
+                .map(line => line.trim().toLowerCase())
+                .filter(line => line && !line.startsWith('#') && !line.startsWith('--'));
+
+            // 3. Check if every required package is present in 'pip freeze'
+            for (const req of requirements) {
+                // This handles "package==version", "package>=version", or just "package"
+                const packageName = req.split(/[=>]/)[0].trim();
+                if (!installed.includes(packageName)) {
+                    console.log(`[${label}] Missing or mismatched dependency: ${packageName}`);
+                    needsReinstall = true;
+                    break;
+                }
+            }
         } catch (err) {
-            console.error(`[ASR] ${label}: failed to install dependencies: ${err.message}`);
+            console.error(`[${label}] Error checking dependencies: ${err.message}`);
+            needsReinstall = true;
+        }
+    }
+
+    if (needsReinstall) {
+        console.log(`[${label}] Performing clean install...`);
+        
+        // NUCLEAR OPTION: Delete the venv folder to ensure a clean slate
+        if (existsSync(venvDir)) {
+            rmSync(venvDir, { recursive: true, force: true });
+        }
+
+        try {
+            // Create venv
+            execSync(`${sysPython} -m venv ${venvDir}`, { cwd: componentDir, stdio: 'inherit' });
+            
+            // Install from requirements.txt
+            if (existsSync(requirementsFile)) {
+                console.log(`[${label}] Installing requirements (this may take a few minutes)...`);
+                execSync(`"${venvPython}" -m pip install --upgrade pip`, { cwd: componentDir, stdio: 'inherit' });
+                
+                // Note: This will use the --extra-index-url we put in your requirements.txt
+                execSync(`"${venvPython}" -m pip install -r requirements.txt`, { cwd: componentDir, stdio: 'inherit' });
+            }
+        } catch (err) {
+            console.error(`[${label}] Setup failed: ${err.message}`);
             return null;
         }
     }
 
-    console.log(`[ASR] ${label}: setup complete`);
+    console.log(`[${label}] Environment is healthy.`);
     return venvPython;
 }
 

@@ -10,6 +10,35 @@
 1) Push the code back to your own fork
 2) Create a merge request (then I'll look through the changes and approve)
 
+## Change Model to gpt-4o-mini
+
+1) Open:janet.js
+- Find the model configuration and change it to: "model": "gpt-4o-mini"
+- Locate the embedding configuration. It should be set to: "embedding": "openai"
+
+If you cannot find the embedding configuration:
+Check behind the "saving_memory" logic
+Someone may have accidentally moved it there
+Or search the project for:
+embedding
+
+
+2) Add Your OpenAI API Key, go to the file: keys.example.json
+
+Create a new file : keys.json
+Paste the copied content inside
+Replace: "openaiApiKey": "YOUR_API_KEY_HERE"
+e.g. "openaiApiKey": "sk-xxxxxxxxxxxxxxxx"
+
+
+3) remember to Ctrl+s before node main.js
+4) Important
+    - After creating keys.json, delete or remove keysExample.json
+    - Never commit keys.json to Git
+    - Make sure keys.json is in .gitignore
+
+
+
 ## Installation
 Mindcraft files:  
 1) run "npm install" in the root directory

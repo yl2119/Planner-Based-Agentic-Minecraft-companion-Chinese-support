@@ -43,7 +43,7 @@ e.g. "openaiApiKey": "sk-xxxxxxxxxxxxxxxx"
 Mindcraft files:  
 1) run "npm install" in the root directory
 
-Local LLM:
+Local LLM (If you are not using LLM API):
 1) Install ollama
 2) Run the following command to install the mindcraft LLM model:
 ```
@@ -51,7 +51,7 @@ ollama pull sweaterdog/andy-4:micro-q8_0 && ollama pull embeddinggemma
 ```
 
 ## Running
-1) Launch ollama
+1) Launch ollama (If you are running the model locally)
 2) Open Minecraft Launcher and launch Version 1.21.1
 3) Go to single player and open a single player world
 4) Once you are in the world, press "esc" and select "open to LAN"

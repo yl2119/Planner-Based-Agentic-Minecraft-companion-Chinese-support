@@ -66,6 +66,14 @@ const settings = {
   
     "log_all_prompts": false, // log ALL prompts to file
 
+
+    
+    "rooms": {
+        "kitchen":     { "x": 10,  "y": 64, "z": 20  },
+        "bedroom":     { "x": -15, "y": 64, "z": 30  },
+        "living_room": { "x": 5,   "y": 64, "z": -10 }
+    }//the length of the rooms is not fixed 
+
 }
 
 if (process.env.SETTINGS_JSON) {

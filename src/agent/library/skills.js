@@ -2091,3 +2091,27 @@ export async function useToolOn(bot, toolName, targetName) {
     log(bot, `Used ${toolName} on ${block.name}.`);
     return true;
  }
+
+
+ //goToRoom function 
+ export async function goToRoom(bot, roomName) {
+    
+    const rooms = settings.rooms;
+    if (!rooms || Object.keys(rooms).length === 0) {
+        log(bot, `No rooms are defined in settings.`);
+        return false;
+    }
+    const key = Object.keys(rooms).find(
+        k => k.toLowerCase() === roomName.toLowerCase()
+    );
+    if (!key) {
+        const available = Object.keys(rooms).join(', ');
+        log(bot, `Room "${roomName}" not found. Available rooms: ${available}`);
+        return false;
+    }
+    const room = rooms[key];
+    log(bot, `Going to ${key} at (${room.x}, ${room.y}, ${room.z})...`);
+    await goToPosition(bot, room.x, room.y, room.z, 2);
+    log(bot, `Arrived at ${key}.`);
+    return true;
+}

@@ -2,7 +2,7 @@ import { io } from 'socket.io-client';
 import convoManager from './conversation.js';
 import { setSettings } from './settings.js';
 import { getFullState } from './library/full_state.js';
-
+import settings from './settings.js';
 // agent's individual connection to the mindserver
 // always connect to localhost
 
@@ -63,6 +63,9 @@ class MindServerProxy {
 		
         this.socket.on('send-message', (data) => {
             try {
+                if (settings.chat_ingame) {
+                    this.agent.bot.chat(`/tellraw @a {"text":"[${data.from}] ${data.message}","color":"gray"}`);
+                }
                 this.agent.respondFunc(data.from, data.message);
             } catch (error) {
                 console.error('Error: ', JSON.stringify(error, Object.getOwnPropertyNames(error)));

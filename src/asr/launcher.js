@@ -79,7 +79,7 @@ function ensureVenv(componentDir, label) {
             // 3. Check if every required package is present in 'pip freeze'
             for (const req of requirements) {
                 // This handles "package==version", "package>=version", or just "package"
-                const packageName = req.split(/[=>]/)[0].trim();
+                const packageName = req.split(/[=>]/)[0].replace(/\[.*\]/, '').trim();
                 if (!installed.includes(packageName)) {
                     console.log(`[${label}] Missing or mismatched dependency: ${packageName}`);
                     needsReinstall = true;

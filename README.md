@@ -40,6 +40,15 @@ e.g. "openaiApiKey": "sk-xxxxxxxxxxxxxxxx"
 
 
 ## Installation
+
+Kokoro-TTS:
+1) Download the kokoro-onnx file and bin file
+```
+https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/kokoro-v0_19.fp16.onnx
+https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
+```
+2) Place both files in ./src/agent/kokoro
+
 Mindcraft files:  
 1) run "npm install" in the root directory
 
@@ -54,7 +63,7 @@ ollama pull sweaterdog/andy-4:micro-q8_0 && ollama pull embeddinggemma
 1) Launch ollama (If you are running the model locally)
 2) Open Minecraft Launcher and launch Version 1.21.1
 3) Go to single player and open a single player world
-4) Once you are in the world, press "esc" and select "open to LAN"
+4) Once you are in the world, press "esc" and select "open to LAN" (Allow command usage to enable voice transcript)
 5) Enter port number 55916
 6) In the root directory run `node main.js`
 7) If there are no errors in the terminal Janet should join your game

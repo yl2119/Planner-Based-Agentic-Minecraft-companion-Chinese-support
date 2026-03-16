@@ -40,6 +40,15 @@ e.g. "openaiApiKey": "sk-xxxxxxxxxxxxxxxx"
 
 
 ## Installation
+
+Kokoro-TTS:
+1) Download the kokoro-onnx file and bin file
+```
+https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files/kokoro-v0_19.fp16.onnx
+https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin
+```
+2) Place both files in ./src/agent/kokoro
+
 Mindcraft files:  
 1) run "npm install" in the root directory
 

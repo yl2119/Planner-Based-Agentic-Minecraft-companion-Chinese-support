@@ -18,6 +18,7 @@ import { Task } from './tasks/tasks.js';
 import { speak } from './speak.js';
 import { log, validateNameFormat, handleDisconnection } from './connection_handler.js';
 import {TTSService} from './kokoro/tts_launcher.js'
+import { TaskManager } from './task_manager.js';
 
 export class Agent {
     async start(load_mem=false, init_message=null, count_id=0) {
@@ -31,7 +32,8 @@ export class Agent {
         this.tts = new TTSService();
         this.name = (this.prompter.getName() || '').trim();
         console.log(`Initializing agent ${this.name}...`);
-
+        this.task_manager = new TaskManager(this);
+        this.task_manager.load();
         // Validate Name Format
         // connection_handler now ensures the message has [LoginGuard] prefix
         const nameCheck = validateNameFormat(this.name);

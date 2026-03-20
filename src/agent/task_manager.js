@@ -1,7 +1,10 @@
-const fs = require('fs');
-const path = require('path');
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import path from 'path';
 
-class TaskManager {
+const TASK_STATUSES = ['pending', 'in_progress', 'completed', 'failed', 'cancelled'];
+const STEP_STATUSES = ['pending', 'in_progress', 'completed', 'failed', 'blocked'];
+
+export class TaskManager {
     constructor(agent) {
         this.agent = agent;
         this.currentTask = null;
@@ -21,9 +24,19 @@ class TaskManager {
         return `step_${index + 1}`;
     }
 
+    nowIso() {
+        return new Date().toISOString();
+    }
+
     touchTask() {
         if (this.currentTask) {
-            this.currentTask.updated_at = new Date().toISOString();
+            this.currentTask.updated_at = this.nowIso();
+        }
+    }
+
+    validateGoal(goal) {
+        if (typeof goal !== 'string' || goal.trim().length === 0) {
+            throw new Error('goal must be a non-empty string');
         }
     }
 
@@ -33,26 +46,29 @@ class TaskManager {
         }
 
         for (const step of steps) {
-            if (!step || typeof step.description !== 'string' || step.description.trim() === '') {
+            if (!step || typeof step.description !== 'string' || step.description.trim().length === 0) {
                 throw new Error('each step must have a non-empty description');
             }
         }
     }
 
-    createTask(goal, steps) {
-        if (typeof goal !== 'string' || goal.trim() === '') {
-            throw new Error('goal must be a non-empty string');
-        }
-
-        this.validateSteps(steps);
-
-        const now = new Date().toISOString();
-
-        const normalizedSteps = steps.map((step, index) => ({
+    normalizeSteps(steps) {
+        return steps.map((step, index) => ({
             step_id: step.step_id || this.generateStepId(index),
             description: step.description.trim(),
-            status: index === 0 ? 'in_progress' : 'pending'
+            status: index === 0 ? 'in_progress' : 'pending',
+            retry_count: typeof step.retry_count === 'number' ? step.retry_count : 0,
+            last_failure_reason: step.last_failure_reason ?? null,
+            last_attempt_at: step.last_attempt_at ?? null
         }));
+    }
+
+    createTask(goal, steps) {
+        this.validateGoal(goal);
+        this.validateSteps(steps);
+
+        const now = this.nowIso();
+        const normalizedSteps = this.normalizeSteps(steps);
 
         this.currentTask = {
             task_id: this.generateTaskId(),
@@ -75,17 +91,28 @@ class TaskManager {
         return this.currentTask;
     }
 
+    getStepById(stepId) {
+        if (!this.currentTask) return null;
+        return this.currentTask.steps.find(step => step.step_id === stepId) || null;
+    }
+
+    getCurrentStep() {
+        if (!this.currentTask || !this.currentTask.current_step_id) {
+            return null;
+        }
+        return this.getStepById(this.currentTask.current_step_id);
+    }
+
     updateStepStatus(stepId, status) {
         if (!this.currentTask) {
             throw new Error('no current task');
         }
 
-        const validStatuses = ['pending', 'in_progress', 'completed', 'failed', 'blocked'];
-        if (!validStatuses.includes(status)) {
+        if (!STEP_STATUSES.includes(status)) {
             throw new Error(`invalid step status: ${status}`);
         }
 
-        const step = this.currentTask.steps.find(s => s.step_id === stepId);
+        const step = this.getStepById(stepId);
         if (!step) {
             throw new Error(`step not found: ${stepId}`);
         }
@@ -93,31 +120,104 @@ class TaskManager {
         step.status = status;
         this.touchTask();
 
-        if (status === 'failed') {
-            this.markTaskFailed(`step failed: ${step.description}`);
+        if (status === 'in_progress') {
+            this.currentTask.status = 'in_progress';
+            this.currentTask.current_step_id = stepId;
+            this.save();
             return this.currentTask;
         }
 
         if (status === 'completed') {
             const allCompleted = this.currentTask.steps.every(s => s.status === 'completed');
-            if (allCompleted) {
-                this.markTaskComplete();
-            } else if (this.currentTask.current_step_id === stepId) {
-                this.advanceToNextStep();
-            } else {
-                this.save();
-            }
-            return this.currentTask;
-        }
 
-        if (status === 'in_progress') {
-            this.currentTask.current_step_id = stepId;
-            this.currentTask.status = 'in_progress';
+            if (allCompleted) {
+                return this.markTaskComplete();
+            }
+
+            if (this.currentTask.current_step_id === stepId) {
+                return this.advanceToNextStep();
+            }
+
             this.save();
             return this.currentTask;
         }
 
+        if (status === 'failed' || status === 'blocked') {
+            this.currentTask.status = 'in_progress';
+            this.currentTask.current_step_id = stepId;
+            this.save();
+            return this.currentTask;
+        }
+
+        if (status === 'pending' && this.currentTask.current_step_id === stepId) {
+            this.currentTask.current_step_id = null;
+        }
+
         this.save();
+        return this.currentTask;
+    }
+
+    recordStepFailure(stepId, reason = 'step attempt failed') {
+        if (!this.currentTask) {
+            throw new Error('no current task');
+        }
+
+        const step = this.getStepById(stepId);
+        if (!step) {
+            throw new Error(`step not found: ${stepId}`);
+        }
+
+        step.status = 'failed';
+        step.retry_count += 1;
+        step.last_failure_reason = reason;
+        step.last_attempt_at = this.nowIso();
+
+        this.currentTask.status = 'in_progress';
+        this.currentTask.current_step_id = stepId;
+        this.touchTask();
+        this.save();
+
+        return this.currentTask;
+    }
+
+    blockStep(stepId, reason = 'step is blocked') {
+        if (!this.currentTask) {
+            throw new Error('no current task');
+        }
+
+        const step = this.getStepById(stepId);
+        if (!step) {
+            throw new Error(`step not found: ${stepId}`);
+        }
+
+        step.status = 'blocked';
+        step.last_failure_reason = reason;
+        step.last_attempt_at = this.nowIso();
+
+        this.currentTask.status = 'in_progress';
+        this.currentTask.current_step_id = stepId;
+        this.touchTask();
+        this.save();
+
+        return this.currentTask;
+    }
+
+    resetStepForRetry(stepId) {
+        if (!this.currentTask) {
+            throw new Error('no current task');
+        }
+
+        const step = this.getStepById(stepId);
+        if (!step) {
+            throw new Error(`step not found: ${stepId}`);
+        }
+
+        step.status = 'in_progress';
+        this.currentTask.status = 'in_progress';
+        this.currentTask.current_step_id = stepId;
+        this.touchTask();
+        this.save();
+
         return this.currentTask;
     }
 
@@ -129,8 +229,7 @@ class TaskManager {
         const nextStep = this.currentTask.steps.find(step => step.status === 'pending');
 
         if (!nextStep) {
-            this.markTaskComplete();
-            return this.currentTask;
+            return this.markTaskComplete();
         }
 
         nextStep.status = 'in_progress';
@@ -138,6 +237,7 @@ class TaskManager {
         this.currentTask.status = 'in_progress';
         this.touchTask();
         this.save();
+
         return this.currentTask;
     }
 
@@ -146,38 +246,41 @@ class TaskManager {
             throw new Error('no current task');
         }
 
-        const now = new Date().toISOString();
+        const now = this.nowIso();
         this.currentTask.status = 'completed';
         this.currentTask.current_step_id = null;
         this.currentTask.completed_at = now;
         this.currentTask.updated_at = now;
         this.save();
+
         return this.currentTask;
     }
 
-    markTaskFailed(reason) {
+    markTaskFailed(reason = 'unknown failure') {
         if (!this.currentTask) {
             throw new Error('no current task');
         }
 
         this.currentTask.status = 'failed';
-        this.currentTask.failure_reason = reason || 'unknown failure';
+        this.currentTask.failure_reason = reason;
         this.currentTask.current_step_id = null;
         this.touchTask();
         this.save();
+
         return this.currentTask;
     }
 
-    cancelTask(reason) {
+    cancelTask(reason = 'cancelled') {
         if (!this.currentTask) {
             throw new Error('no current task');
         }
 
         this.currentTask.status = 'cancelled';
-        this.currentTask.cancel_reason = reason || 'cancelled';
+        this.currentTask.cancel_reason = reason;
         this.currentTask.current_step_id = null;
         this.touchTask();
         this.save();
+
         return this.currentTask;
     }
 
@@ -187,33 +290,100 @@ class TaskManager {
     }
 
     save() {
-        const filePath = this.getTaskFilePath();
-        const dirPath = path.dirname(filePath);
+        try {
+            const filePath = this.getTaskFilePath();
+            const dirPath = path.dirname(filePath);
 
-        if (!fs.existsSync(dirPath)) {
-            fs.mkdirSync(dirPath, { recursive: true });
+            if (!existsSync(dirPath)) {
+                mkdirSync(dirPath, { recursive: true });
+            }
+
+            writeFileSync(filePath, JSON.stringify(this.currentTask, null, 2), 'utf8');
+        } catch (err) {
+            console.error('Error saving current task:', err);
         }
-
-        fs.writeFileSync(filePath, JSON.stringify(this.currentTask, null, 2), 'utf8');
     }
 
     load() {
-        const filePath = this.getTaskFilePath();
+        try {
+            const filePath = this.getTaskFilePath();
 
-        if (!fs.existsSync(filePath)) {
+            if (!existsSync(filePath)) {
+                this.currentTask = null;
+                return null;
+            }
+
+            const raw = readFileSync(filePath, 'utf8').trim();
+
+            if (!raw) {
+                this.currentTask = null;
+                return null;
+            }
+
+            const parsed = JSON.parse(raw);
+
+            if (parsed === null) {
+                this.currentTask = null;
+                return null;
+            }
+
+            if (!this.isValidTaskObject(parsed)) {
+                console.warn('Invalid current_task.json format. Resetting current task to null.');
+                this.currentTask = null;
+                return null;
+            }
+
+            this.currentTask = parsed;
+            return this.currentTask;
+        } catch (err) {
+            console.error('Error loading current task:', err);
             this.currentTask = null;
             return null;
         }
+    }
 
-        const raw = fs.readFileSync(filePath, 'utf8').trim();
+    isValidTaskObject(task) {
+        if (!task || typeof task !== 'object') return false;
+        if (typeof task.task_id !== 'string') return false;
+        if (typeof task.goal !== 'string') return false;
+        if (!TASK_STATUSES.includes(task.status)) return false;
+        if (!(typeof task.current_step_id === 'string' || task.current_step_id === null)) return false;
+        if (!(typeof task.failure_reason === 'string' || task.failure_reason === null)) return false;
+        if (!(typeof task.cancel_reason === 'string' || task.cancel_reason === null)) return false;
+        if (typeof task.created_at !== 'string') return false;
+        if (typeof task.updated_at !== 'string') return false;
+        if (!(typeof task.completed_at === 'string' || task.completed_at === null)) return false;
+        if (!Array.isArray(task.steps) || task.steps.length === 0) return false;
 
-        if (!raw) {
-            this.currentTask = null;
-            return null;
+        for (const step of task.steps) {
+            if (!step || typeof step !== 'object') return false;
+            if (typeof step.step_id !== 'string') return false;
+            if (typeof step.description !== 'string') return false;
+            if (!STEP_STATUSES.includes(step.status)) return false;
+            if (typeof step.retry_count !== 'number') return false;
+            if (!(typeof step.last_failure_reason === 'string' || step.last_failure_reason === null)) return false;
+            if (!(typeof step.last_attempt_at === 'string' || step.last_attempt_at === null)) return false;
         }
 
-        this.currentTask = JSON.parse(raw);
-        return this.currentTask;
+        return true;
+    }
+
+    formatStepLine(step) {
+        let text = `- [${step.step_id}] ${step.description}`;
+
+        if (step.retry_count > 0) {
+            text += `\n  retries: ${step.retry_count}`;
+        }
+
+        if (step.last_failure_reason) {
+            text += `\n  last failure: ${step.last_failure_reason}`;
+        }
+
+        if (step.last_attempt_at) {
+            text += `\n  last attempt: ${step.last_attempt_at}`;
+        }
+
+        return text;
     }
 
     formatForPrompt() {
@@ -222,17 +392,22 @@ class TaskManager {
         }
 
         const task = this.currentTask;
-        const currentStep = task.steps.find(step => step.step_id === task.current_step_id) || null;
+        const currentStep = this.getCurrentStep();
         const completedSteps = task.steps.filter(step => step.status === 'completed');
         const pendingSteps = task.steps.filter(step => step.status === 'pending');
         const inProgressSteps = task.steps.filter(step => step.status === 'in_progress');
         const blockedSteps = task.steps.filter(step => step.status === 'blocked');
         const failedSteps = task.steps.filter(step => step.status === 'failed');
 
+        const formatStepList = (steps) =>
+            steps.length > 0
+                ? steps.map(step => this.formatStepLine(step)).join('\n')
+                : '- None';
+
         let text = '';
         text += `Goal: ${task.goal}\n`;
         text += `Task Status: ${task.status}\n`;
-        text += `Current Step: ${currentStep ? currentStep.description : 'None'}\n`;
+        text += `Current Step: ${currentStep ? `[${currentStep.step_id}] ${currentStep.description}` : 'None'}\n`;
 
         if (task.failure_reason) {
             text += `Failure Reason: ${task.failure_reason}\n`;
@@ -243,32 +418,20 @@ class TaskManager {
         }
 
         text += '\nCompleted Steps:\n';
-        text += completedSteps.length
-            ? completedSteps.map(s => `- ${s.description}`).join('\n')
-            : '- None';
+        text += formatStepList(completedSteps);
 
         text += '\n\nIn Progress Steps:\n';
-        text += inProgressSteps.length
-            ? inProgressSteps.map(s => `- ${s.description}`).join('\n')
-            : '- None';
+        text += formatStepList(inProgressSteps);
 
         text += '\n\nPending Steps:\n';
-        text += pendingSteps.length
-            ? pendingSteps.map(s => `- ${s.description}`).join('\n')
-            : '- None';
+        text += formatStepList(pendingSteps);
 
         text += '\n\nBlocked Steps:\n';
-        text += blockedSteps.length
-            ? blockedSteps.map(s => `- ${s.description}`).join('\n')
-            : '- None';
+        text += formatStepList(blockedSteps);
 
         text += '\n\nFailed Steps:\n';
-        text += failedSteps.length
-            ? failedSteps.map(s => `- ${s.description}`).join('\n')
-            : '- None';
+        text += formatStepList(failedSteps);
 
         return text;
     }
 }
-
-module.exports = TaskManager;

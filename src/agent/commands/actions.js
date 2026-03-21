@@ -513,5 +513,18 @@ export const actionsList = [
             await skills.goToRoom(agent.bot, room_name);
         })
     },
+
+    {
+        name: "!createTask",
+        description:'Creates a detailed plan for the goal and saves it into memory',
+        params: {
+            'targetItem': {type: 'string', description: 'Name of the item to acquire.'},
+            'count': {type: 'int', description: 'Number of item to craft.'},
+            'taskDescription': {type: 'string', description: 'A summarized description of the goal.'},
+        },
+        perform: runAsAction(async (agent, targetItem, count, taskDescription) => {
+            await skills.createTask(agent.bot, targetItem, count, taskDescription)
+        })
+    },
     
 ];

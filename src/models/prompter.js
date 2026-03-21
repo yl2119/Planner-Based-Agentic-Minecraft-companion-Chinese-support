@@ -250,7 +250,8 @@ export class Prompter {
             }
 
             if (generation?.includes('</think>')) {
-                const [_, afterThink] = generation.split('</think>')
+                const [thinking, afterThink] = generation.split('</think>')
+                console.log(`[THINK] ${this.agent.name}:`, thinking.replace(/<think>/g, '').trim());
                 generation = afterThink
             }
 
@@ -283,7 +284,8 @@ export class Prompter {
         let resp = await this.chat_model.sendRequest([], prompt);
         await this._saveLog(prompt, to_summarize, resp, 'memSaving');
         if (resp?.includes('</think>')) {
-            const [_, afterThink] = resp.split('</think>')
+            const [thinking, afterThink] = resp.split('</think>')
+            console.log(`[THINK] ${this.agent.name} (mem):`, thinking.replace(/<think>/g, '').trim());
             resp = afterThink;
         }
         return resp;

@@ -129,6 +129,49 @@ export const queryList = [
         }
     },
     {
+        name: "!nearbyBlockTypes",
+        description: "Get nearby blocks within a radius, grouped by type with counts and coordinates. Only shows block types that appear at least 'threshold' times.",
+        params: {
+            'distance': { type: 'int', description: 'The search radius in blocks.', domain: [1, 64], optional: true, default: 16 },
+            'threshold': { type: 'int', description: 'Minimum number of a block type required to include it in the results.', domain: [1, Infinity, '[)'], optional: true, default: 1 }
+        },
+        perform: function (agent, distance = 16, threshold = 1) {
+            let bot = agent.bot;
+            let blocks = world.getNearestBlocks(bot, null, distance);
+
+            // Group by block name
+            let grouped = {};
+            for (let block of blocks) {
+                if (!grouped[block.name]) {
+                    grouped[block.name] = { count: 0, positions: [] };
+                }
+                grouped[block.name].count++;
+                grouped[block.name].positions.push(block.position);
+            }
+
+            // ort by count descending
+            let entries = Object.entries(grouped)
+                .filter(([, data]) => data.count >= threshold)
+                .sort((a, b) => b[1].count - a[1].count);
+
+            let res = `NEARBY_BLOCK_TYPES (radius: ${distance}, threshold: ${threshold})`;
+            if (entries.length === 0) {
+                res += ': none';
+            } else {
+                for (let [name, data] of entries) {
+                    // Show up to 20 closest coordinates per type
+                    const coordStr = data.positions.slice(0, 20)
+                        .map(p => `(${p.x}, ${p.y}, ${p.z})`)
+                        .join(', ');
+                    const more = data.count > 20 ? ` (+${data.count - 20} more)` : '';
+                    res += `\n- ${name}: ${data.count}x  nearest: ${coordStr}${more}`;
+                }
+            }
+
+            return pad(res);
+        }
+    },
+    {
         name: "!craftable",
         description: "Get the craftable items with the bot's inventory.",
         perform: function (agent) {

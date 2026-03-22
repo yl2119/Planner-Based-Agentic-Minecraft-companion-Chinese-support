@@ -138,9 +138,14 @@ export class TTSService {
         if (!response.body) throw new Error('No response body');
 
         // Spawn ffplay with verbose logging (remove -loglevel quiet for now)
+        // const player = spawn('ffplay', [
+        //     '-autoexit', '-nodisp',
+        //     '-f', 's16le', '-ar', '24000', '-ch_layout', 'mono', '-i', '-'
+        // ]);
+
         const player = spawn('ffplay', [
             '-autoexit', '-nodisp',
-            '-f', 's16le', '-ar', '24000', '-ch_layout', 'mono', '-i', '-'
+            '-f', 's16le', '-ar', '24000', '-ac', '1', '-i', '-'
         ]);
 
         const reader = response.body.getReader();

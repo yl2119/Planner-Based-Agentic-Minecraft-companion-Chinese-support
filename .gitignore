@@ -6,6 +6,7 @@ code_records/
 scratch.js
 bots/**/action-code/**
 bots/**/
+bots/Janet/tasks/*
 keys.json
 services/viaproxy/jars/**
 services/viaproxy/logs/**
@@ -32,3 +33,4 @@ src/mindcraft-py/__pycache__/
 *.bin
 .venv/
 node_modules/
+

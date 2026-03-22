@@ -610,7 +610,10 @@ export async function createPlan(targetItem, count = 1, current_inventory = {}) 
     function resolveItem(item, amountNeeded) {
         let available = simulated_inventory[item] || 0;
         if (available >= amountNeeded) return;
-        if (active_resolutions.has(item)) return;
+        if (active_resolutions.has(item)){
+            return;
+
+        } 
         active_resolutions.add(item);
 
         let needed = amountNeeded - available;
@@ -734,9 +737,7 @@ export async function createPlan(targetItem, count = 1, current_inventory = {}) 
         
         active_resolutions.delete(item);
     }
-
     resolveItem(targetItem, count);
-
     if (steps.length > 0) {
         steps[0].status = "in_progress";
     }

@@ -1,5 +1,4 @@
-// import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import path from 'path';
 
 const TASK_STATUSES = ['pending', 'in_progress', 'completed', 'failed', 'cancelled'];
@@ -11,19 +10,8 @@ export class TaskManager {
         this.currentTask = null;
     }
 
-    // getTaskFilePath() {
-    //     return path.join('.', 'bots', this.agent.name, 'current_task.json');
-    // }
-
     getTaskFilePath() {
-        if (this.currentTask && this.currentTask.task_id) {
-            return path.join('.', 'bots', this.agent.name, 'tasks', `${this.currentTask.task_id}.json`);
-        }
-        return path.join('.', 'bots', this.agent.name, 'tasks', 'current_task.json');
-    }
-    
-    getTasksDir() {
-        return path.join('.', 'bots', this.agent.name, 'tasks');
+        return path.join('.', 'bots', this.agent.name, 'current_task.json');
     }
 
     generateTaskId() {
@@ -68,10 +56,9 @@ export class TaskManager {
         return steps.map((step, index) => ({
             step_id: step.step_id || this.generateStepId(index),
             description: step.description.trim(),
-            status: index === 0 ? 'in_progress' : 'pending',
-            retry_count: typeof step.retry_count === 'number' ? step.retry_count : 0,
-            last_failure_reason: step.last_failure_reason ?? null,
-            last_attempt_at: step.last_attempt_at ?? null
+            status: step.status && STEP_STATUSES.includes(step.status)
+                ? step.status
+                : (index === 0 ? 'in_progress' : 'pending')
         }));
     }
 
@@ -81,12 +68,13 @@ export class TaskManager {
 
         const now = this.nowIso();
         const normalizedSteps = this.normalizeSteps(steps);
+        const currentStep = normalizedSteps.find(step => step.status === 'in_progress') || normalizedSteps[0];
 
         this.currentTask = {
             task_id: this.generateTaskId(),
             goal: goal.trim(),
             status: 'in_progress',
-            current_step_id: normalizedSteps[0].step_id,
+            current_step_id: currentStep ? currentStep.step_id : null,
             failure_reason: null,
             cancel_reason: null,
             created_at: now,
@@ -169,7 +157,7 @@ export class TaskManager {
         return this.currentTask;
     }
 
-    recordStepFailure(stepId, reason = 'step attempt failed') {
+    recordStepFailure(stepId) {
         if (!this.currentTask) {
             throw new Error('no current task');
         }
@@ -180,10 +168,6 @@ export class TaskManager {
         }
 
         step.status = 'failed';
-        step.retry_count += 1;
-        step.last_failure_reason = reason;
-        step.last_attempt_at = this.nowIso();
-
         this.currentTask.status = 'in_progress';
         this.currentTask.current_step_id = stepId;
         this.touchTask();
@@ -192,7 +176,7 @@ export class TaskManager {
         return this.currentTask;
     }
 
-    blockStep(stepId, reason = 'step is blocked') {
+    blockStep(stepId) {
         if (!this.currentTask) {
             throw new Error('no current task');
         }
@@ -203,9 +187,6 @@ export class TaskManager {
         }
 
         step.status = 'blocked';
-        step.last_failure_reason = reason;
-        step.last_attempt_at = this.nowIso();
-
         this.currentTask.status = 'in_progress';
         this.currentTask.current_step_id = stepId;
         this.touchTask();
@@ -318,48 +299,37 @@ export class TaskManager {
 
     load() {
         try {
-            const tasksDir = this.getTasksDir();
-            if (!existsSync(tasksDir)) {
+            const filePath = this.getTaskFilePath();
+
+            if (!existsSync(filePath)) {
                 this.currentTask = null;
                 return null;
             }
-    
-            const files = readdirSync(tasksDir)
-                .filter(f => f.startsWith('task_') && f.endsWith('.json'))
-                .sort()
-                .reverse();
-    
-            for (const file of files) {
-                try {
-                    const filePath = path.join(tasksDir, file);
-                    const raw = readFileSync(filePath, 'utf8').trim();
-                    if (!raw) continue;
-                    const parsed = JSON.parse(raw);
-                    if (!this.isValidTaskObject(parsed)) continue;
-                    if (parsed.status === 'in_progress') {
-                        parsed.steps = parsed.steps.map(step => ({
-                            step_id: step.step_id,
-                            description: step.description,
-                            status: step.status || 'pending',
-                            retry_count: typeof step.retry_count === 'number' ? step.retry_count : 0,
-                            last_failure_reason: step.last_failure_reason ?? null,
-                            last_attempt_at: step.last_attempt_at ?? null
-                        }));
-                        parsed.failure_reason = parsed.failure_reason ?? null;
-                        parsed.cancel_reason = parsed.cancel_reason ?? null;
-                        parsed.completed_at = parsed.completed_at ?? null;
-                        this.currentTask = parsed;
-                        return this.currentTask;
-                    }
-                } catch {
-                    continue;
-                }
+
+            const raw = readFileSync(filePath, 'utf8').trim();
+
+            if (!raw) {
+                this.currentTask = null;
+                return null;
             }
-    
-            this.currentTask = null;
-            return null;
+
+            const parsed = JSON.parse(raw);
+
+            if (parsed === null) {
+                this.currentTask = null;
+                return null;
+            }
+
+            if (!this.isValidTaskObject(parsed)) {
+                console.warn('Invalid current_task.json format. Resetting current task to null.');
+                this.currentTask = null;
+                return null;
+            }
+
+            this.currentTask = parsed;
+            return this.currentTask;
         } catch (err) {
-            console.error('Error loading task:', err);
+            console.error('Error loading current task:', err);
             this.currentTask = null;
             return null;
         }
@@ -383,31 +353,13 @@ export class TaskManager {
             if (typeof step.step_id !== 'string') return false;
             if (typeof step.description !== 'string') return false;
             if (!STEP_STATUSES.includes(step.status)) return false;
-            // if (typeof step.retry_count !== 'number') return false;
-            // if (!(typeof step.last_failure_reason === 'string' || step.last_failure_reason === null)) return false;
-            // if (!(typeof step.last_attempt_at === 'string' || step.last_attempt_at === null)) return false;
-            if (step.retry_count !== undefined && typeof step.retry_count !== 'number') return false;
         }
 
         return true;
     }
 
     formatStepLine(step) {
-        let text = `- [${step.step_id}] ${step.description}`;
-
-        if (step.retry_count > 0) {
-            text += `\n  retries: ${step.retry_count}`;
-        }
-
-        if (step.last_failure_reason) {
-            text += `\n  last failure: ${step.last_failure_reason}`;
-        }
-
-        if (step.last_attempt_at) {
-            text += `\n  last attempt: ${step.last_attempt_at}`;
-        }
-
-        return text;
+        return `- [${step.step_id}] ${step.description}`;
     }
 
     formatForPrompt() {

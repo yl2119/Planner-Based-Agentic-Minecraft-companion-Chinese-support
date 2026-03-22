@@ -4,6 +4,12 @@
 import OpenAIApi from 'openai';
 import { getKey, hasKey } from '../utils/keys.js';
 import { strictFormat } from '../utils/text.js';
+import { promises as fs } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+    
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export class VLLM {
     static prefix = 'vllm';
@@ -60,10 +66,11 @@ export class VLLM {
     }
 
     async saveToFile(logFile, logEntry) {
-        let task_id = this.agent.task.task_id;
-        console.log(task_id)
+        const currentTask = this.agent.task_manager?.getCurrentTask();
+        const task_id = currentTask?.task_id ?? null;
+
         let logDir;
-        if (this.task_id === null) {
+        if (task_id === null) {
             logDir = path.join(__dirname, `../../bots/${this.agent.name}/logs`);
         } else {
             logDir = path.join(__dirname, `../../bots/${this.agent.name}/logs/${task_id}`);

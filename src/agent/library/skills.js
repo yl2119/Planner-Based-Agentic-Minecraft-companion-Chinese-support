@@ -3,8 +3,7 @@ import * as world from "./world.js";
 import pf from 'mineflayer-pathfinder';
 import Vec3 from 'vec3';
 import settings from "../../../settings.js";
-import { writeFile, mkdir } from 'fs/promises';
-import { dirname } from 'path';
+
 
 const blockPlaceDelay = settings.block_place_delay == null ? 0 : settings.block_place_delay;
 const useDelay = blockPlaceDelay > 0;
@@ -2119,40 +2118,57 @@ export async function useToolOn(bot, toolName, targetName) {
 }
 
 export async function createTask(bot, targetItem, count, taskDescription) {
-    const d = new Date();
-    const isoString = d.toISOString();
-
-    // 1. Generate the Task Data
-    const planResult = JSON.parse(await mc.createPlan(targetItem, count, world.getInventoryCounts(bot)));
-    const steps = planResult.steps || [];
-
-    const task = {
-        task_id: `task_${d.getTime()}`,
-        goal: taskDescription,
-        status: "in_progress",
-        current_step_id: steps.length > 0 ? steps[0].step_id : null,
-        failure_reason: null,
-        cancel_reason: null,
-        created_at: isoString,
-        updated_at: isoString,
-        completed_at: null,
-        steps: steps
-    };
-
-    const filePath = `./bots/${bot.username}/tasks/${task.task_id}.json`
-    console.log(task)
-    // 2. Save to the specified path
-    try {
-        // Ensure the directory exists before writing
-        await mkdir(dirname(filePath), { recursive: true });
-        
-        // Convert object to pretty JSON string and write to disk
-        await writeFile(filePath, JSON.stringify(task, null, 2), 'utf8');
-        
-        console.log(`Task saved successfully to: ${filePath}`);
-        return task;
-    } catch (error) {
-        console.error(`Failed to save task to ${filePath}:`, error);
-        throw error;
+    if (!bot.agent || !bot.agent.task_manager) {
+        throw new Error('TaskManager is not available on bot.agent.task_manager');
     }
+
+    const planResult = JSON.parse(
+        await mc.createPlan(targetItem, count, world.getInventoryCounts(bot))
+    );
+
+    const rawSteps = Array.isArray(planResult.steps) ? planResult.steps : [];
+
+    if (rawSteps.length === 0) {
+        throw new Error('Planner returned no steps');
+    }
+
+    const steps = rawSteps.map((step, index) => ({
+        step_id: step.step_id || `step_${index + 1}`,
+        description: step.description,
+        status: step.status || (index === 0 ? 'in_progress' : 'pending')
+    }));
+
+    const goal =
+        taskDescription && typeof taskDescription === 'string'
+            ? taskDescription
+            : `Collect ${count} ${targetItem}`;
+
+    const task = bot.agent.task_manager.createTask(goal, steps);
+
+    console.log('Task created through TaskManager:', task.task_id);
+    return task;
+}
+export function createTaskFromPlan(taskManager, planResult, taskDescription, targetItem, count) {
+    if (!taskManager) {
+        throw new Error('taskManager is required');
+    }
+
+    const rawSteps = Array.isArray(planResult?.steps) ? planResult.steps : [];
+
+    if (rawSteps.length === 0) {
+        throw new Error('Planner returned no steps');
+    }
+
+    const steps = rawSteps.map((step, index) => ({
+        step_id: step.step_id || `step_${index + 1}`,
+        description: step.description,
+        status: step.status || (index === 0 ? 'in_progress' : 'pending')
+    }));
+
+    const goal =
+        taskDescription && typeof taskDescription === 'string'
+            ? taskDescription
+            : `Collect ${count} ${targetItem}`;
+
+    return taskManager.createTask(goal, steps);
 }

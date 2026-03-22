@@ -68,6 +68,7 @@ export class Agent {
 
         console.log(this.name, 'logging into minecraft...');
         this.bot = initBot(this.name);
+        this.bot.agent = this;
         
         // Connection Handler
         const onDisconnect = (event, reason) => {

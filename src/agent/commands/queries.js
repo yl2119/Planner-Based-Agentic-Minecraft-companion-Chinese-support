@@ -351,6 +351,51 @@ export const queryList = [
             
         },
     },
+        {
+        name: '!showTask',
+        description: 'Show the current task state.',
+        perform: function (agent) {
+            if (!agent.task_manager) {
+                return pad('TaskManager not available.');
+            }
+
+            const task = agent.task_manager.getCurrentTask();
+            if (!task) {
+                return pad('No active task.');
+            }
+
+            return pad(agent.task_manager.formatForPrompt());
+        }
+    },
+    {
+        name: '!clearTask',
+        description: 'Clear the current task.',
+        perform: function (agent) {
+            if (!agent.task_manager) {
+                return pad('TaskManager not available.');
+            }
+
+            agent.task_manager.clearCurrentTask();
+            return pad('Current task cleared.');
+        }
+    },
+    {
+        name: '!cancelTask',
+        description: 'Cancel the current task.',
+        perform: function (agent) {
+            if (!agent.task_manager) {
+                return pad('TaskManager not available.');
+            }
+
+            const task = agent.task_manager.getCurrentTask();
+            if (!task) {
+                return pad('No active task.');
+            }
+
+            agent.task_manager.cancelTask('cancelled by user');
+            return pad('Current task cancelled.');
+        }
+    },
     {
         name: '!help',
         description: 'Lists all available commands and their descriptions.',

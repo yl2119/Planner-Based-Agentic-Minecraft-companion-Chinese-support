@@ -169,6 +169,12 @@ export class Prompter {
             prompt = prompt.replaceAll('$EXAMPLES', await examples.createExampleMessage(messages));
         if (prompt.includes('$MEMORY'))
             prompt = prompt.replaceAll('$MEMORY', this.agent.history.memory);
+        if (prompt.includes('$TASK_STATE')) {
+            const taskState = this.agent.task_manager
+                ? this.agent.task_manager.formatForPrompt()
+                : 'No active task.';
+            prompt = prompt.replaceAll('$TASK_STATE', taskState);
+        }
         if (prompt.includes('$TO_SUMMARIZE'))
             prompt = prompt.replaceAll('$TO_SUMMARIZE', stringifyTurns(to_summarize));
         if (prompt.includes('$CONVO'))
@@ -344,7 +350,8 @@ export class Prompter {
             return;
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         let logEntry;
-        let task_id = this.agent.task.task_id;
+        const currentTask = this.agent.task_manager?.getCurrentTask();
+        const task_id = currentTask?.task_id ?? null;
         if (task_id == null) {
             logEntry = `[${timestamp}] \nPrompt:\n${prompt}\n\nConversation:\n${JSON.stringify(messages, null, 2)}\n\nResponse:\n${generation}\n\n`;
         } else {
@@ -355,7 +362,9 @@ export class Prompter {
     }
 
     async _saveToFile(logFile, logEntry) {
-        let task_id = this.agent.task.task_id;
+        const currentTask = this.agent.task_manager?.getCurrentTask();
+        const task_id = currentTask?.task_id ?? null;
+
         let logDir;
         if (task_id == null) {
             logDir = path.join(__dirname, `../../bots/${this.agent.name}/logs`);

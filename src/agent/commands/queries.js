@@ -129,15 +129,16 @@ export const queryList = [
         }
     },
     {
-        name: "!nearbyBlockTypes",
-        description: "Get nearby blocks within a radius, grouped by type with counts and coordinates. Only shows block types that appear at least 'threshold' times.",
+        name: "!nearbyinteractableblocks",
+        description: "Get nearby interactable blocks within a radius, grouped by type with counts and coordinates. Only shows block types that appear at least 'threshold' times.",
         params: {
             'distance': { type: 'int', description: 'The search radius in blocks.', domain: [1, 64], optional: true, default: 16 },
             'threshold': { type: 'int', description: 'Minimum number of a block type required to include it in the results.', domain: [1, Infinity, '[)'], optional: true, default: 1 }
         },
         perform: function (agent, distance = 16, threshold = 1) {
             let bot = agent.bot;
-            let blocks = world.getNearestBlocks(bot, null, distance);
+            const interactableBlocks = ['crafting_table', 'furnace', 'blast_furnace', 'smoker', 'cartography_table', 'fletching_table', 'smithing_table', 'stonecutter', 'loom', 'grindstone', 'anvil', 'chipped_anvil', 'damaged_anvil', 'enchanting_table', 'brewing_stand', 'cauldron', 'chest', 'trapped_chest', 'barrel', 'ender_chest', 'shulker_box', 'white_shulker_box', 'orange_shulker_box', 'magenta_shulker_box', 'light_blue_shulker_box', 'yellow_shulker_box', 'lime_shulker_box', 'pink_shulker_box', 'gray_shulker_box', 'light_gray_shulker_box', 'cyan_shulker_box', 'purple_shulker_box', 'blue_shulker_box', 'brown_shulker_box', 'green_shulker_box', 'red_shulker_box', 'black_shulker_box', 'hopper', 'dispenser', 'dropper', 'jukebox', 'lectern', 'beacon'];
+            let blocks = world.getNearestBlocks(bot, interactableBlocks, distance);
 
             // Group by block name
             let grouped = {};
@@ -149,7 +150,7 @@ export const queryList = [
                 grouped[block.name].positions.push(block.position);
             }
 
-            // ort by count descending
+            // sort by count descending
             let entries = Object.entries(grouped)
                 .filter(([, data]) => data.count >= threshold)
                 .sort((a, b) => b[1].count - a[1].count);

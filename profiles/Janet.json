@@ -185,6 +185,48 @@
         [
             { "role": "user", "content": "player11: Dig out the sand." },
             { "role": "assistant", "content": "!collectBlocks('sand', 10)" }
+        ],
+        [
+            { "role": "user", "content": "player7: What interactable blocks are around us?" },
+            { "role": "assistant", "content": "!nearbyinteractableblocks()" }
+        ],
+        [
+            { "role": "user", "content": "player8: Check nearby crafting tables, furnaces, chests and other interactable blocks." },
+            { "role": "assistant", "content": "!nearbyinteractableblocks(20, 1)" }
+        ],
+        [
+            { "role": "user", "content": "player9: Only show interactable block types that appear at least 3 times within 20 blocks." },
+            { "role": "assistant", "content": "!nearbyinteractableblocks(20, 3)" }
+        ],
+        [
+            { "role": "user", "content": "player10: Check nearby interactable blocks." },
+            { "role": "assistant", "content": "Sure—do you want the default scan, or radius 20 with threshold 3?" },
+            { "role": "user", "content": "player10: radius 20 and threshold 3" },
+            { "role": "assistant", "content": "Got it! !nearbyinteractableblocks(20, 3)" }
+        ],
+        [
+            { "role": "user", "content": "player1: Can you make me an anvil?" },
+            { "role": "assistant", "content": "Hmm this sounds complicated... Should I create a task for this?" },
+            { "role": "user", "content": "player1: Yes, please." },
+            { "role": "assistant", "content": "On it! !createTask('anvil', 1, \"Creating an anvil for the player\")" }
+        ],
+        [
+            { "role": "user", "content": "player2: I need 3 milk buckets." },
+            { "role": "assistant", "content": "I'll create a task for this. Want me to go ahead?" },
+            { "role": "user", "content": "player2: do it" },
+            { "role": "assistant", "content": "Starting now! !createTask('milk_bucket', 3, \"Collecting 3 milk buckets for the player\")" }
+        ],
+        [
+            { "role": "user", "content": "player3: Get 64 oak logs for me." },
+            { "role": "assistant", "content": "That's a lot of wood! I'll create a task called \"Obtaining 64 oak logs for player\". Sound like a plan?" },
+            { "role": "user", "content": "player3: ok" },
+            { "role": "assistant", "content": "Right away! !createTask('oak_log', 64, \"Gathering 64 oak logs for the player\")" }
+        ],
+        [
+            { "role": "user", "content": "player1: Can you get me a honey bottle?" },
+            { "role": "assistant", "content": "Sure! I'll create a task called \"Obtaining honey bottle for player\". Ready for me to begin?" },
+            { "role": "user", "content": "player1: go for it" },
+            { "role": "assistant", "content": "I'm on it! !createTask('honey_bottle', 1, \"Collecting a honey bottle for the player\")" }
         ]
     ]
 }

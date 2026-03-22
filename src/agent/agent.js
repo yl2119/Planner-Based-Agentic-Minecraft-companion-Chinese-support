@@ -187,7 +187,10 @@ export class Agent {
         
         this.bot.on('chat', (username, message) => {
             if (serverProxy.getNumOtherAgents() > 0) return;
-            // only respond to open chat messages when there are no other agents
+            if (username === this.name && message === this._echoMessage) {
+                this._echoMessage = null;
+                return; // ignore our own echo
+            }
             respondFunc(username, message);
         });
 

@@ -21,7 +21,7 @@ console.log(taskManager.getCurrentTask());
 console.log(taskManager.formatForPrompt());
 
 console.log('\n=== TEST 3: complete step_2 ===');
-taskManager.updateStepStatus('step_2', 'completed');
+taskManager.updateStepStatus('step_2', 'failed');
 console.log(taskManager.getCurrentTask());
 console.log(taskManager.formatForPrompt());
 

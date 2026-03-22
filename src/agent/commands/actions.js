@@ -1,7 +1,8 @@
 import * as skills from '../library/skills.js';
 import settings from '../settings.js';
 import convoManager from '../conversation.js';
-
+import * as mc from '../../utils/mcdata.js';    
+import * as world from '../library/world.js';        
 
 function runAsAction (actionFn, resume = false, timeout = -1) {
     let actionLabel = null;  // Will be set on first use
@@ -516,15 +517,67 @@ export const actionsList = [
 
     {
         name: "!createTask",
-        description:'Creates a detailed plan for the goal and saves it into memory',
+        description: 'Creates a detailed plan for acquiring an item. Saves the plan and starts tracking progress.',
         params: {
             'targetItem': {type: 'string', description: 'Name of the item to acquire.'},
-            'count': {type: 'int', description: 'Number of item to craft.'},
-            'taskDescription': {type: 'string', description: 'A summarized description of the goal.'},
+            'count': {type: 'int', description: 'Number of items to acquire.'},
+            'taskDescription': {type: 'string', description: 'A short description of the goal.'},
         },
         perform: runAsAction(async (agent, targetItem, count, taskDescription) => {
-            await skills.createTask(agent.bot, targetItem, count, taskDescription)
+            await skills.createTask(agent.bot, targetItem, count, taskDescription);
+            agent.task_manager.load();
+            const task = agent.task_manager.getCurrentTask();
+            if (task) {
+                skills.log(agent.bot, `Task created with ${task.steps.length} steps. First step: [${task.steps[0].step_id}] ${task.steps[0].description}`);
+            }
         })
+    },
+
+    {
+        name: '!completeStep',
+        description: 'Mark the current task step as completed and advance to the next step.',
+        params: {},
+        perform: async function(agent) {
+            const step = agent.task_manager.getCurrentStep();
+            if (!step) return 'No active task step to complete.';
+            agent.task_manager.updateStepStatus(step.step_id, 'completed');
+            const next = agent.task_manager.getCurrentStep();
+            if (next) return `Step "${step.description}" completed. Next: [${next.step_id}] ${next.description}`;
+            return `Step "${step.description}" completed. All steps done! Task finished.`;
+        }
+    },
+    {
+        name: '!failStep',
+        description: 'Mark the current task step as failed with a reason.',
+        params: {
+            'reason': {type: 'string', description: 'Why the step failed.'}
+        },
+        perform: async function(agent, reason) {
+            const step = agent.task_manager.getCurrentStep();
+            if (!step) return 'No active task step to fail.';
+            agent.task_manager.recordStepFailure(step.step_id, reason);
+            return `Step "${step.description}" failed (attempt ${step.retry_count + 1}): ${reason}`;
+        }
+    },
+    {
+        name: '!cancelTask',
+        description: 'Cancel the current task.',
+        params: {
+            'reason': {type: 'string', description: 'Why the task is being cancelled.'}
+        },
+        perform: async function(agent, reason) {
+            if (!agent.task_manager.getCurrentTask()) return 'No active task to cancel.';
+            agent.task_manager.cancelTask(reason);
+            return `Task cancelled: ${reason}`;
+        }
+    },
+    {
+        name: '!viewTask',
+        description: 'View the current task status and all steps.',
+        params: {},
+        perform: async function(agent) {
+            return agent.task_manager.formatForPrompt();
+        }
     },
     
 ];

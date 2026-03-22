@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+// import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
 import path from 'path';
 
 const TASK_STATUSES = ['pending', 'in_progress', 'completed', 'failed', 'cancelled'];
@@ -10,8 +11,19 @@ export class TaskManager {
         this.currentTask = null;
     }
 
+    // getTaskFilePath() {
+    //     return path.join('.', 'bots', this.agent.name, 'current_task.json');
+    // }
+
     getTaskFilePath() {
-        return path.join('.', 'bots', this.agent.name, 'current_task.json');
+        if (this.currentTask && this.currentTask.task_id) {
+            return path.join('.', 'bots', this.agent.name, 'tasks', `${this.currentTask.task_id}.json`);
+        }
+        return path.join('.', 'bots', this.agent.name, 'tasks', 'current_task.json');
+    }
+    
+    getTasksDir() {
+        return path.join('.', 'bots', this.agent.name, 'tasks');
     }
 
     generateTaskId() {
@@ -306,37 +318,48 @@ export class TaskManager {
 
     load() {
         try {
-            const filePath = this.getTaskFilePath();
-
-            if (!existsSync(filePath)) {
+            const tasksDir = this.getTasksDir();
+            if (!existsSync(tasksDir)) {
                 this.currentTask = null;
                 return null;
             }
-
-            const raw = readFileSync(filePath, 'utf8').trim();
-
-            if (!raw) {
-                this.currentTask = null;
-                return null;
+    
+            const files = readdirSync(tasksDir)
+                .filter(f => f.startsWith('task_') && f.endsWith('.json'))
+                .sort()
+                .reverse();
+    
+            for (const file of files) {
+                try {
+                    const filePath = path.join(tasksDir, file);
+                    const raw = readFileSync(filePath, 'utf8').trim();
+                    if (!raw) continue;
+                    const parsed = JSON.parse(raw);
+                    if (!this.isValidTaskObject(parsed)) continue;
+                    if (parsed.status === 'in_progress') {
+                        parsed.steps = parsed.steps.map(step => ({
+                            step_id: step.step_id,
+                            description: step.description,
+                            status: step.status || 'pending',
+                            retry_count: typeof step.retry_count === 'number' ? step.retry_count : 0,
+                            last_failure_reason: step.last_failure_reason ?? null,
+                            last_attempt_at: step.last_attempt_at ?? null
+                        }));
+                        parsed.failure_reason = parsed.failure_reason ?? null;
+                        parsed.cancel_reason = parsed.cancel_reason ?? null;
+                        parsed.completed_at = parsed.completed_at ?? null;
+                        this.currentTask = parsed;
+                        return this.currentTask;
+                    }
+                } catch {
+                    continue;
+                }
             }
-
-            const parsed = JSON.parse(raw);
-
-            if (parsed === null) {
-                this.currentTask = null;
-                return null;
-            }
-
-            if (!this.isValidTaskObject(parsed)) {
-                console.warn('Invalid current_task.json format. Resetting current task to null.');
-                this.currentTask = null;
-                return null;
-            }
-
-            this.currentTask = parsed;
-            return this.currentTask;
+    
+            this.currentTask = null;
+            return null;
         } catch (err) {
-            console.error('Error loading current task:', err);
+            console.error('Error loading task:', err);
             this.currentTask = null;
             return null;
         }
@@ -360,9 +383,10 @@ export class TaskManager {
             if (typeof step.step_id !== 'string') return false;
             if (typeof step.description !== 'string') return false;
             if (!STEP_STATUSES.includes(step.status)) return false;
-            if (typeof step.retry_count !== 'number') return false;
-            if (!(typeof step.last_failure_reason === 'string' || step.last_failure_reason === null)) return false;
-            if (!(typeof step.last_attempt_at === 'string' || step.last_attempt_at === null)) return false;
+            // if (typeof step.retry_count !== 'number') return false;
+            // if (!(typeof step.last_failure_reason === 'string' || step.last_failure_reason === null)) return false;
+            // if (!(typeof step.last_attempt_at === 'string' || step.last_attempt_at === null)) return false;
+            if (step.retry_count !== undefined && typeof step.retry_count !== 'number') return false;
         }
 
         return true;

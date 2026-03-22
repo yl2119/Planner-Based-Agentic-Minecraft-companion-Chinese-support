@@ -64,7 +64,8 @@ class MindServerProxy {
         this.socket.on('send-message', (data) => {
             try {
                 if (settings.chat_ingame) {
-                    this.agent.bot.chat(`/tellraw @a {"text":"[${data.from}] ${data.message}","color":"white"}`);
+                    this.agent._echoMessage = `[${data.from}] ${data.message}`;
+                    this.agent.bot.chat(this.agent._echoMessage);
                 }
                 this.agent.respondFunc(data.from, data.message);
             } catch (error) {

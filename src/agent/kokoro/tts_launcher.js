@@ -138,9 +138,14 @@ export class TTSService {
         if (!response.body) throw new Error('No response body');
 
         // Spawn ffplay with verbose logging (remove -loglevel quiet for now)
+        // const player = spawn('ffplay', [
+        //     '-autoexit', '-nodisp',
+        //     '-f', 's16le', '-ar', '24000', '-ch_layout', 'mono', '-i', '-'
+        // ]);
+
         const player = spawn('ffplay', [
             '-autoexit', '-nodisp',
-            '-f', 's16le', '-ar', '24000', '-ch_layout', 'mono', '-i', '-'
+            '-f', 's16le', '-ar', '24000', '-ac', '1', '-i', '-'
         ]);
 
         const reader = response.body.getReader();
@@ -192,7 +197,8 @@ export class TTSService {
 
         let sysPython;
         try {
-            sysPython = isWin ? 'py' : getSystemPython();
+            
+            sysPython = isWin ? 'py' : this.getSystemPython();
         } catch (err) {
             console.error(`[${label}] No system python found:`, err.message);
             return null;
@@ -278,7 +284,7 @@ export class TTSService {
     }
 
     getSystemPython() {
-        if (isWindows) {
+        if (process.platform === 'win32') {
             try { execSync('python --version', { stdio: 'ignore' }); return 'python'; }
             catch { return 'python3'; }
         }

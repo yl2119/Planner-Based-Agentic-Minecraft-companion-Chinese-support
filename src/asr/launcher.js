@@ -102,7 +102,7 @@ function ensureVenv(componentDir, label) {
 
         try {
             // Create venv
-            execSync(`${sysPython} -m venv ${venvDir}`, { cwd: componentDir, stdio: 'inherit' });
+            execSync(`${sysPython} -m venv "${venvDir}"`, { cwd: componentDir, stdio: 'inherit' });
             
             // Install from requirements.txt
             if (existsSync(requirementsFile)) {

@@ -105,7 +105,7 @@ export const queryList = [
         perform: function (agent) {
             let bot = agent.bot;
             let res = 'NEARBY_BLOCKS';
-            let blocks = world.getNearestBlocks(bot);
+            let blocks = world.getNearestBlocks(bot, null, 32, 50000);
             let block_details = new Set();
             
             for (let block of blocks) {

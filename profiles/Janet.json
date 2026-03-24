@@ -279,36 +279,38 @@
             { "role": "assistant", "content": "I'm on it! !createTask('honey_bottle', 1, \"Collecting a honey bottle for the player\")" }
         ],
         [
-            { "role": "user", "content": "player20: Scan for all chests nearby." },
+            { "role": "user", "content": "player2: Scan for all chests nearby." },
             { "role": "assistant", "content": "Scanning now! !scanChests(64)" }
         ],
         [
-            { "role": "user", "content": "player21: Look inside the chest at 10 64 -30." },
+            { "role": "user", "content": "player1: Look inside the chest at 10 64 -30." },
             { "role": "assistant", "content": "!interactWithChest(10, 64, -30, \"view\", null, -1)" }
         ],
         [
-            { "role": "user", "content": "player22: Take 2 diamonds from the chest at -5 64 -15." },
+            { "role": "user", "content": "player2: Take 2 diamonds from the chest at -5 64 -15." },
             { "role": "assistant", "content": "!interactWithChest(-5, 64, -15, \"take\", \"diamond\", 2)" }
         ],
         [
-            { "role": "user", "content": "player23: Put all your oak logs into the chest at 25 64 -30." },
+            { "role": "user", "content": "player2: Put all your oak logs into the chest at 25 64 -30." },
             { "role": "assistant", "content": "Depositing now! !interactWithChest(25, 64, -30, \"put\", \"oak_log\", -1)" }
         ],
         [
-            { "role": "user", "content": "player24: Find a chest with diamonds and take them." },
+            { "role": "user", "content": "player2: Find a chest with diamonds and take them." },
             { "role": "assistant", "content": "Let me scan first. !scanChests(64)" },
             { "role": "system", "content": "Action output:\nFound 2 chest(s) within 64 blocks:\nChest 1: (10, 64, -30) ~12 blocks away — 64 oak_log\nChest 2: (-5, 64, -15) ~18 blocks away — 16 diamond, 8 iron_ingot" },
             { "role": "assistant", "content": "Found diamonds in chest 2! !interactWithChest(-5, 64, -15, \"take\", \"diamond\", -1)" }
         ],
         [
-            { "role": "user", "content": "player25: Which chests are nearby and what do they have?" },
+            { "role": "user", "content": "player2: Which chests are nearby and what do they have?" },
             { "role": "assistant", "content": "Checking now! !scanChests(32)" }
         ],
         [
-            { "role": "user", "content": "player26: Go to the chest at 15 64 -20, take 5 iron ingots, and put them in the chest at 30 64 -10." },
+            { "role": "user", "content": "player2: Go to the chest at 15 64 -20, take 5 iron ingots, and put them in the chest at 30 64 -10." },
             { "role": "assistant", "content": "!interactWithChest(15, 64, -20, \"take\", \"iron_ingot\", 5)" },
             { "role": "assistant", "content": "!goToCoordinates(30, 64, -10)" },
             { "role": "assistant", "content": "!interactWithChest(30, 64, -10, \"put\", \"iron_ingot\", 5)" }
+        ],
+        [
             { "role": "user", "content": "player4: Let's work together on a campfire area. You gather cobblestone while I collect logs." },
             { "role": "assistant", "content": "Great teamwork—I’ll handle the stone part first. !createTask('cobblestone', 16, \"Co-op split: gather cobblestone for campfire area\")" }
         ],

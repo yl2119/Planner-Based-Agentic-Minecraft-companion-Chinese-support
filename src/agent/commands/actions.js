@@ -305,6 +305,62 @@ export const actionsList = [
         })
     },
     {
+        name: '!collectWood',
+        description: 'Collect any type of wood logs nearby. Scans for all wood types in range and collects the nearest log each time.',
+        params: {
+            'num': { type: 'int', description: 'The number of logs to collect.', domain: [1, Number.MAX_SAFE_INTEGER] }
+        },
+        perform: runAsAction(async (agent, num) => {
+            const bot = agent.bot;
+
+            // Scan nearby blocks and find any *_log types
+            const nearbyBlocks = world.getNearestBlocks(bot, null, 32, 262144);
+            const woodTypes = [...new Set(
+                nearbyBlocks
+                    .map(b => b.name)
+                    .filter(name => name.endsWith('_log'))
+            )];
+
+            if (woodTypes.length === 0) {
+                skills.log(bot, 'No wood logs found nearby.');
+                return;
+            }
+
+            skills.log(bot, `Found wood types nearby: ${woodTypes.join(', ')}. Collecting ${num} total...`);
+
+            let collected = 0;
+            while (collected < num) {
+                // Each iteration, find the single nearest log of ANY wood type
+                const blocks = world.getNearestBlocksWhere(
+                    bot,
+                    block => block.name.endsWith('_log'),
+                    32,
+                    1  // just the closest one
+                );
+
+                if (blocks.length === 0) {
+                    skills.log(bot, `No more wood logs nearby. Collected ${collected} so far.`);
+                    break;
+                }
+
+                const block = blocks[0];
+                const before = world.getInventoryCounts(bot)[block.name] || 0;
+                await skills.collectBlock(bot, block.name, 1);
+                const after = world.getInventoryCounts(bot)[block.name] || 0;
+
+                if (after - before === 0) {
+                    // Failed to collect, skip to avoid infinite loop
+                    skills.log(bot, `Failed to collect ${block.name}, skipping.`);
+                    break;
+                }
+
+                collected++;
+            }
+
+            skills.log(bot, `Collected ${collected} wood log(s) total.`);
+        }, false, 10)
+    },
+    {
         name: '!collectBlocks',
         description: 'Collect the nearest blocks of a given type.',
         params: {

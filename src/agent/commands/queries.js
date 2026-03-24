@@ -105,7 +105,7 @@ export const queryList = [
         perform: function (agent) {
             let bot = agent.bot;
             let res = 'NEARBY_BLOCKS';
-            let blocks = world.getNearestBlocks(bot);
+            let blocks = world.getNearestBlocks(bot, null, 32, 50000);
             let block_details = new Set();
             
             for (let block of blocks) {
@@ -132,7 +132,7 @@ export const queryList = [
         name: "!nearbyinteractableblocks",
         description: "Get nearby interactable blocks within a radius, grouped by type with counts and coordinates. Only shows block types that appear at least 'threshold' times.",
         params: {
-            'distance': { type: 'int', description: 'The search radius in blocks.', domain: [1, 64], optional: true, default: 16 },
+            'distance': { type: 'int', description: 'The search radius in blocks.', domain: [1, 129], optional: true, default: 16 },
             'threshold': { type: 'int', description: 'Minimum number of a block type required to include it in the results.', domain: [1, Infinity, '[)'], optional: true, default: 1 }
         },
         perform: function (agent, distance = 16, threshold = 1) {

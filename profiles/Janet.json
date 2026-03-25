@@ -380,8 +380,7 @@
         [
             { "role": "system", "content": "No lapis_ore found within 128 blocks." },
             { "role": "assistant", "content": "Couldn't find any lapis ore nearby. Try searching elsewhere?" }
-        ]
-
+        ],
         [
             { "role": "user", "content": "player57: Scan for all chests nearby." },
             { "role": "assistant", "content": "Scanning now! !scanChests(64)" }

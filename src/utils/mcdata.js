@@ -718,7 +718,7 @@ export async function createPlan(targetItem, count = 1, current_inventory = {}) 
                         resolveItem(requiredTool, 1);
                         toolToUse = requiredTool; 
                     }
-                    description = `Mine ${targetBlock} using ${toolToUse} to collect ${needed} ${item}${woodNote}`;
+                    description = `Collect ${needed} ${targetBlock} to get ${needed} ${item}${woodNote}`;
                 } else {
                     description = `Collect ${targetBlock} by hand to get ${needed} ${item}${woodNote}`;
                 }

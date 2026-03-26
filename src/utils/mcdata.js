@@ -550,6 +550,30 @@ function getTier(toolName) {
     return index === -1 ? Infinity : index;
 }
 
+function requiresCraftingTable(recipeData) {
+    // Handle the case where an array of recipes is passed
+    const recipes = Array.isArray(recipeData) ? recipeData : [recipeData];
+
+    for (const recipe of recipes) {
+        if (!recipe) continue;
+
+        // 1. Check Shaped Recipes
+        if (recipe.inShape) {
+            const height = recipe.inShape.length;
+            const width = recipe.inShape[0].length;
+            if (height > 2 || width > 2) return true;
+        }
+        
+        // 2. Check Shapeless Recipes
+        // Note: In some mcData versions, this is 'ingredients', in others 'ingredients' is a list of IDs
+        if (recipe.ingredients && recipe.ingredients.length > 4) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 export async function createPlan(targetItem, count = 1, current_inventory = {}) {
     initializeLoopingItems();
     
@@ -558,16 +582,52 @@ export async function createPlan(targetItem, count = 1, current_inventory = {}) 
     }
 
     let step_count = 1;
-    let steps = [];
+    let steps = []; 
     let simulated_inventory = { ...current_inventory };
     const active_resolutions = new Set();
 
-    function addStep(desc) {
-        steps.push({
-            step_id: `step_${step_count++}`,
-            description: desc,
-            status: "pending" 
-        });
+    // Helper to add and merge steps
+    function addStep(stepData) {
+        if (stepData.type === 'text') {
+            steps.push(stepData);
+            return;
+        }
+
+        for (let i = steps.length - 1; i >= 0; i--) {
+            let existing = steps[i];
+            if (existing.type === stepData.type && existing.item === stepData.item) {
+                let canMerge = false;
+                if (stepData.type === 'collect' && existing.targetBlock === stepData.targetBlock && existing.tool === stepData.tool) {
+                    canMerge = true;
+                } else if (stepData.type === 'craft' && existing.recipeId === stepData.recipeId) {
+                    canMerge = true;
+                } else if (stepData.type === 'smelt' && existing.ingredient === stepData.ingredient && existing.fuel === stepData.fuel) {
+                    canMerge = true;
+                } else if (stepData.type === 'hunt' && existing.source === stepData.source) {
+                    canMerge = true;
+                } else if (stepData.type === 'obtain') {
+                    canMerge = true;
+                }
+
+                if (canMerge) {
+                    existing.amount += stepData.amount;
+                    if (stepData.type === 'craft') {
+                        for (let newIng of stepData.ingredients) {
+                            let exIng = existing.ingredients.find(i => i.name === newIng.name);
+                            if (exIng) {
+                                exIng.amount += newIng.amount;
+                            } else {
+                                existing.ingredients.push({ ...newIng });
+                            }
+                        }
+                    } else if (stepData.type === 'smelt') {
+                        existing.fuelAmount += stepData.fuelAmount;
+                    }
+                    return; 
+                }
+            }
+        }
+        steps.push(stepData);
     }
 
     function resolveFuel(itemsToSmelt) {
@@ -583,21 +643,41 @@ export async function createPlan(targetItem, count = 1, current_inventory = {}) 
         return { name: chosenFuel, amount: fuelNeeded };
     }
 
-    // Helper to find if we already have a suitable tool in inventory
+    function getWoodNote(itemName) {
+        const genericWoodItems = [
+            'stick', 'chest', 'crafting_table', 'barrel', 'composter', 'bowl', 
+            'ladder', 'wooden_pickaxe', 'wooden_axe', 'wooden_sword', 
+            'wooden_shovel', 'wooden_hoe', 'shield'
+        ];
+        if (genericWoodItems.includes(itemName)) {
+            return " (Note: Any type of wood can be used)";
+        }
+
+        const woodTypes = ['dark_oak', 'oak', 'birch', 'spruce', 'jungle', 'acacia', 'mangrove', 'cherry', 'crimson', 'warped', 'bamboo'];
+        const currentWood = woodTypes.find(w => itemName.includes(w));
+
+        if (currentWood) {
+            const isStrict = Array.from(active_resolutions).every(activeItem => activeItem.includes(currentWood));
+            if (!isStrict) {
+                return " (Note: Any type of wood can be used)";
+            }
+        }
+        
+        return "";
+    }
+
     function getBestToolInInventory(requiredTool) {
         if (!requiredTool) return null;
         
-        const toolType = requiredTool.split('_').slice(1).join('_'); // e.g., "pickaxe"
+        const toolType = requiredTool.split('_').slice(1).join('_'); 
         const requiredTier = getTier(requiredTool);
 
         let bestTool = null;
         let bestTier = Infinity;
 
-        // Check all items in simulated inventory
         for (const [itemName, count] of Object.entries(simulated_inventory)) {
             if (count > 0 && itemName.endsWith(toolType)) {
                 const currentTier = getTier(itemName);
-                // Must be at least as good as required (lower or equal index)
                 if (currentTier <= requiredTier && currentTier < bestTier) {
                     bestTier = currentTier;
                     bestTool = itemName;
@@ -607,12 +687,76 @@ export async function createPlan(targetItem, count = 1, current_inventory = {}) 
         return bestTool;
     }
 
+    function getCustomObtainMethod(itemName) {
+        const methods = {
+            'milk_bucket': 'Use Bucket on Cow or Mooshroom',
+            'water_bucket': 'Use Bucket on Water Source Block',
+            'lava_bucket': 'Use Bucket on Lava Source Block',
+            'powder_snow_bucket': 'Use Bucket on Powder Snow Block / Cauldron',
+            'axolotl_bucket': 'Use Water Bucket on Axolotl',
+            'cod_bucket': 'Use Water Bucket on Cod',
+            'salmon_bucket': 'Use Water Bucket on Salmon',
+            'tropical_fish_bucket': 'Use Water Bucket on Tropical Fish',
+            'pufferfish_bucket': 'Use Water Bucket on Pufferfish',
+            'honey_bottle': 'Use Bottle on Filled Beehive / Bee Nest (Level 5)',
+            'dragon_breath': 'Use Bottle on Ender Dragon Breath Cloud ("Purple Fog")',
+            'water_bottle': 'Use Bottle on Water Source / Cauldron',
+            'potion': 'Use Bottle on Water Source / Cauldron',
+            'mushroom_stew': 'Use Bowl on Red/Brown Mooshroom',
+            'suspicious_stew': 'Feed Flower to Brown Mooshroom, then use Bowl',
+            'honeycomb': 'Use Shears on Filled Beehive / Bee Nest (Level 5)',
+            'zombie_head': 'Force a Charged Creeper to blow up a Zombie',
+            'creeper_head': 'Force a Charged Creeper to blow up a Creeper',
+            'skeleton_skull': 'Force a Charged Creeper to blow up a Skeleton',
+            'piglin_head': 'Force a Charged Creeper to blow up a Piglin',
+        };
+
+        if (methods[itemName]) return methods[itemName];
+        
+        if (itemName.endsWith('_pottery_sherd')) {
+            return 'Use Brush on Suspicious Sand / Gravel';
+        }
+        if (itemName.endsWith('_armor_trim_smithing_template')) {
+            return 'Interaction with world containers (Trail Ruins / Vaults)';
+        }
+
+        return 'Check chests, mob drops, or interact with blocks & entities';
+    }
+
+    function getObtainDependencies(itemName) {
+        const deps = {
+            'milk_bucket': [{ item: 'bucket', consumed: true }],
+            'water_bucket': [{ item: 'bucket', consumed: true }],
+            'lava_bucket': [{ item: 'bucket', consumed: true }],
+            'powder_snow_bucket': [{ item: 'bucket', consumed: true }],
+            'axolotl_bucket': [{ item: 'water_bucket', consumed: true }],
+            'cod_bucket': [{ item: 'water_bucket', consumed: true }],
+            'salmon_bucket': [{ item: 'water_bucket', consumed: true }],
+            'tropical_fish_bucket': [{ item: 'water_bucket', consumed: true }],
+            'pufferfish_bucket': [{ item: 'water_bucket', consumed: true }],
+            'honey_bottle': [{ item: 'glass_bottle', consumed: true }],
+            'dragon_breath': [{ item: 'glass_bottle', consumed: true }],
+            'water_bottle': [{ item: 'glass_bottle', consumed: true }],
+            'potion': [{ item: 'glass_bottle', consumed: true }],
+            'mushroom_stew': [{ item: 'bowl', consumed: true }],
+            'suspicious_stew': [{ item: 'bowl', consumed: true }, { item: 'dandelion', consumed: true }],
+            'honeycomb': [{ item: 'shears', consumed: false }],
+        };
+
+        if (deps[itemName]) return deps[itemName];
+
+        if (itemName.endsWith('_pottery_sherd')) {
+            return [{ item: 'brush', consumed: false }];
+        }
+        
+        return [];
+    }
+
     function resolveItem(item, amountNeeded) {
         let available = simulated_inventory[item] || 0;
         if (available >= amountNeeded) return;
         if (active_resolutions.has(item)){
             return;
-
         } 
         active_resolutions.add(item);
 
@@ -620,22 +764,27 @@ export async function createPlan(targetItem, count = 1, current_inventory = {}) 
 
         // --- SPECIAL CASE: Redirect Planks to Logs ---
         if (item.endsWith('_planks')) {
-            const woodType = item.split('_')[0]; 
+            const woodType = item.replace('_planks', ''); 
             const logType = `${woodType}_log`;
             
-            // 1 Log = 4 Planks
             const logsNeeded = Math.ceil(needed / 4);
-            const planksYielded = logsNeeded * 4; // Calculate the actual yield
+            const planksYielded = logsNeeded * 4; 
             
             resolveItem(logType, logsNeeded);
-
-            // Consume the logs used
             simulated_inventory[logType] -= logsNeeded;
             
-            // Output the actual yield
-            addStep(`Craft ${planksYielded} ${item} from ${logsNeeded} ${logType}`);
-            simulated_inventory[item] = (simulated_inventory[item] || 0) + planksYielded;
+            const woodNote = getWoodNote(item);
+            addStep({
+                type: 'craft',
+                item: item,
+                amount: planksYielded,
+                recipeId: 'planks_from_logs',
+                ingredients: [{ name: logType, amount: logsNeeded }],
+                woodNote: woodNote,
+                needsTable: false
+            });
             
+            simulated_inventory[item] = (simulated_inventory[item] || 0) + planksYielded;
             active_resolutions.delete(item);
             return;
         }
@@ -643,7 +792,12 @@ export async function createPlan(targetItem, count = 1, current_inventory = {}) 
         // --- ROUTE C: Animal Drops ---
         let animalSource = getItemAnimalSource(item);
         if (animalSource) {
-            addStep(`Hunt ${animalSource} to collect ${needed} ${item}`);
+            addStep({
+                type: 'hunt',
+                item: item,
+                source: animalSource,
+                amount: needed
+            });
             simulated_inventory[item] = (simulated_inventory[item] || 0) + needed;
             active_resolutions.delete(item);
             return;
@@ -654,93 +808,217 @@ export async function createPlan(targetItem, count = 1, current_inventory = {}) 
         if (smeltIngredient) {
             resolveItem(smeltIngredient, needed);
             const fuelUsed = resolveFuel(needed);
-            addStep(`Smelt ${needed} ${smeltIngredient} using ${fuelUsed.amount} ${fuelUsed.name} into ${item}`);
+            
+            // NEW: Check for Furnace
+            if ((simulated_inventory['furnace'] || 0) <= 0) {
+                resolveItem('furnace', 1);
+                simulated_inventory['furnace'] = 1;
+            }
+
+            addStep({
+                type: 'smelt',
+                item: item,
+                amount: needed,
+                ingredient: smeltIngredient,
+                fuel: fuelUsed.name,
+                fuelAmount: fuelUsed.amount
+            });
             simulated_inventory[item] = (simulated_inventory[item] || 0) + needed;
             active_resolutions.delete(item);
             return;
         }
 
-        // ==========================================
-        // DETERMINISTIC FORK: Manufactured vs Natural
-        // ==========================================
+        // --- ROUTE A: CRAFTING ---
         const isNaturalResource = isBaseItem(item); 
         const recipes = getItemCraftingRecipes(item);
 
-        // --- ROUTE A: CRAFTING (Prioritized for Manufactured Goods like Anvils) ---
-        // If it's NOT a raw material, and it has a recipe, we MUST craft it.
         if (!isNaturalResource && recipes && recipes.length > 0) {
             let [recipe, result] = recipes[0];
             let yieldCount = result.craftedCount || 1;
             let batches = Math.ceil(needed / yieldCount);
+            let ingredientsUsed = [];
 
             for (let [ingName, ingCount] of Object.entries(recipe)) {
                 const totalIngNeeded = ingCount * batches;
-                let skipItem = false;
                 
-                // CHECK IF INVENTORY HAS ENOUGH OF THE ITEM
-                for (const [itemName, count] of Object.entries(simulated_inventory)) {
-                    if (itemName === ingName && count >= totalIngNeeded){
-                        skipItem = true;
-                        break;
-                    }
-                }
+                resolveItem(ingName, totalIngNeeded);
+                simulated_inventory[ingName] -= totalIngNeeded;
                 
-                // SKIP RESOLVING ITEM IF INVENTORY ALREADY HAS THE ITEM
-                if(!skipItem){
-                    resolveItem(ingName, totalIngNeeded);
-                    // --- CRITICAL FIX: Consume the ingredients ---
-                    simulated_inventory[ingName] -= totalIngNeeded;
+                ingredientsUsed.push({ name: ingName, amount: totalIngNeeded });
+            }
+
+            const needsTable = requiresCraftingTable(mcdata.recipes[getItemId(item)][0]);
+            
+            if (needsTable) {
+                if ((simulated_inventory['crafting_table'] || 0) <= 0) {
+                    resolveItem('crafting_table', 1);
+                    simulated_inventory['crafting_table'] = 1;
                 }
             }
 
-            addStep(`Craft ${batches * yieldCount} ${item}`);
+            const woodNote = getWoodNote(item);
+            addStep({
+                type: 'craft',
+                item: item,
+                amount: batches * yieldCount,
+                recipeId: getItemId(item),
+                ingredients: ingredientsUsed,
+                woodNote: woodNote,
+                needsTable: needsTable
+            });
+            
             simulated_inventory[item] = (simulated_inventory[item] || 0) + (batches * yieldCount);
             active_resolutions.delete(item);
             return;
         }
 
-        // --- ROUTE D: MINING / COLLECTING (Prioritized for Natural Resources) ---
+        // --- ROUTE D: MINING / COLLECTING ---
         let blockSources = getItemBlockSources(item);
         if (isNaturalResource || blockSources.length > 0 || mcdata.blocksByName[item]) {
             let targetBlock = blockSources.length > 0 ? blockSources[0] : item;
             let requiredTool = requireTool(targetBlock);
 
             if (requiredTool !== undefined) {
-                let description = "";
-                const woodNote = targetBlock.endsWith('_log') ? " (Note: Any type of wood can be used)" : "";
+                const woodNote = getWoodNote(targetBlock); 
+                let toolToUse = null;
 
                 if (requiredTool !== null) {
-                    // CHECK: Do we already have a tool that works?
-                    let toolToUse = getBestToolInInventory(requiredTool);
-
+                    toolToUse = getBestToolInInventory(requiredTool);
                     if (!toolToUse) {
-                        // We don't have one, so we must resolve the required one
                         resolveItem(requiredTool, 1);
                         toolToUse = requiredTool; 
                     }
-                    description = `Collect ${needed} ${targetBlock} to get ${needed} ${item}${woodNote}`;
-                } else {
-                    description = `Collect ${targetBlock} by hand to get ${needed} ${item}${woodNote}`;
                 }
                 
-                addStep(description);
+                addStep({
+                    type: 'collect',
+                    item: item,
+                    targetBlock: targetBlock,
+                    amount: needed,
+                    tool: toolToUse,
+                    woodNote: woodNote
+                });
+                
                 simulated_inventory[item] = (simulated_inventory[item] || 0) + needed;
                 active_resolutions.delete(item);
                 return;
             }
         }
 
-        // --- FINAL FALLBACK ---
-        // Catches uncraftable, unmineable items like Saddles, Name Tags, or mob loot.
-        addStep(`Obtain ${needed} ${item} (Check chests or mob drops)`);
+        // --- FINAL FALLBACK (OBTAIN) ---
+        const obtainDeps = getObtainDependencies(item);
+        for (const dep of obtainDeps) {
+            const depAmount = dep.consumed ? needed : 1;
+            
+            let hasNonConsumed = false;
+            if (!dep.consumed) {
+                if ((simulated_inventory[dep.item] || 0) >= 1) {
+                    hasNonConsumed = true;
+                }
+            }
+
+            if (!hasNonConsumed) {
+                resolveItem(dep.item, depAmount);
+                if (dep.consumed) {
+                    simulated_inventory[dep.item] -= needed;
+                }
+            }
+        }
+
+        addStep({
+            type: 'obtain',
+            item: item,
+            amount: needed
+        });
         simulated_inventory[item] = (simulated_inventory[item] || 0) + needed;
         
         active_resolutions.delete(item);
     }
+
     resolveItem(targetItem, count);
-    if (steps.length > 0) {
-        steps[0].status = "in_progress";
+
+    // ==========================================
+    // FINAL PASS: Format steps and handle blocks
+    // ==========================================
+    let formattedSteps = [];
+    let tablePlaced = false;
+    let furnacePlaced = false;
+
+    function pushFormattedStep(desc) {
+        formattedSteps.push({
+            step_id: `step_${step_count++}`,
+            description: desc,
+            status: "pending"
+        });
     }
 
-    return JSON.stringify({ steps: steps }, null, 2);
+    for (let i = 0; i < steps.length; i++) {
+        let step = steps[i];
+        
+        // --- Handle Crafting Table ---
+        if (step.type === 'craft' && step.needsTable) {
+            if (!tablePlaced) {
+                pushFormattedStep(`Place down the crafting_table`);
+                tablePlaced = true;
+            }
+        } else if (step.type !== 'craft' || !step.needsTable) {
+            if (tablePlaced) {
+                pushFormattedStep(`Collect the crafting table`);
+                tablePlaced = false;
+            }
+        }
+
+        // --- Handle Furnace ---
+        if (step.type === 'smelt') {
+            if (!furnacePlaced) {
+                pushFormattedStep(`Place down the furnace`);
+                furnacePlaced = true;
+            }
+        } else {
+            if (furnacePlaced) {
+                pushFormattedStep(`Collect the furnace`);
+                furnacePlaced = false;
+            }
+        }
+
+        // --- Format Step Descriptions ---
+        if (step.type === 'collect') {
+            let toolStr = step.tool ? `using ${step.tool}` : `by hand`;
+            if (step.targetBlock === step.item) {
+                pushFormattedStep(`Collect ${step.amount} ${step.targetBlock} ${step.woodNote}`);
+            } else {
+                pushFormattedStep(`Collect ${step.amount} ${step.targetBlock} to get ${step.amount} ${step.item}${step.woodNote}`);
+            }
+        } else if (step.type === 'craft') {
+            let ingStrings = step.ingredients.map(ing => `${ing.amount} ${ing.name}`);
+            let ingDesc = ingStrings.length > 0 ? ` from ${ingStrings.join(' and ')}` : '';
+            pushFormattedStep(`Craft ${step.amount} ${step.item}${ingDesc}${step.woodNote}`);
+        } else if (step.type === 'smelt') {
+            pushFormattedStep(`Smelt ${step.amount} ${step.ingredient} using ${step.fuelAmount} ${step.fuel} into ${step.item}`);
+        } else if (step.type === 'hunt') {
+            pushFormattedStep(`Hunt ${step.source} to collect ${step.amount} ${step.item}`);
+        } else if (step.type === 'obtain') {
+            const obtainMethod = getCustomObtainMethod(step.item);
+            pushFormattedStep(`Obtain ${step.amount} ${step.item} (${obtainMethod})`);
+        } else if (step.type === 'text') {
+            pushFormattedStep(step.description);
+        }
+    }
+
+    // Ensure blocks are collected at the very end if still placed
+    if (tablePlaced) {
+        pushFormattedStep(`Collect the crafting table`);
+    }
+    if (furnacePlaced) {
+        pushFormattedStep(`Collect the furnace`);
+    }
+
+    if (formattedSteps.length > 0) {
+        formattedSteps[0].status = "in_progress";
+    }
+
+    return JSON.stringify({ steps: formattedSteps }, null, 2);
 }
+
+// console.log(createPlan("water_bucket", 1, {"crafting_table":1, "furnace": 1}))
+// console.log(getItemCraftingRecipes("dark_oak_planks"))

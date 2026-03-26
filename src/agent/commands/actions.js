@@ -623,7 +623,7 @@ export const actionsList = [
     },
     {
         name: '!useOn',
-        description: 'Use (right click) the given tool on the nearest target of the given type.',
+        description: 'Use (right click) the given tool on the nearest target of the given type. DO NOT USE THIS COMMAND FOR MINING/COLLECTING/SMELTING/CRAFTING',
         params: {
             'tool_name': { type: 'string', description: 'Name of the tool to use, or "hand" for no tool.' },
             'target': { type: 'string', description: 'The target as an entity type, block type, or "nothing" for no target.' }
@@ -702,9 +702,9 @@ export const actionsList = [
 
             if (taskAfter && taskAfter.task_id === taskBefore.task_id) {
                 if (stepAfter) {
-                    return `Step "${stepBefore.description}" completed. Next: [${stepAfter.step_id}] ${stepAfter.description}`;
+                    return `Next: [${stepAfter.step_id}] ${stepAfter.description}`;
                 }
-                return `Step "${stepBefore.description}" completed. Task "${taskBefore.goal}" is still active, but no current step is set.`;
+                return `Task "${taskBefore.goal}" is still active, but no current step is set.`;
             }
 
             if (taskAfter && taskAfter.task_id !== taskBefore.task_id) {

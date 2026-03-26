@@ -54,6 +54,14 @@ async def list_voices():
         print("ERROR: could not get voices:", e)
     return JSONResponse({"voices": voices})
 
+def clean_text_for_tts(text: str) -> str:
+    """Remove bot commands and other unwanted patterns before TTS."""
+    # Remove !commandName(...) style commands
+    text = re.sub(r'!\w+\([^)]*\)', '', text)
+    # Remove any remaining ! commands without parens (e.g. !stop)
+    text = re.sub(r'!\w+', '', text)
+    return text
+
 def split_sentences(text):
     """Split text into sentences using punctuation."""
     # Simple regex: split after .!? followed by space or end of string
@@ -94,6 +102,8 @@ async def tts_endpoint(payload: dict):
     speed = float(payload.get("speed", 1.0))
     lang = payload.get("lang", "en-us")
 
+    text = clean_text_for_tts(text)
+    
     if not text:
         raise HTTPException(status_code=400, detail="text is required")
 

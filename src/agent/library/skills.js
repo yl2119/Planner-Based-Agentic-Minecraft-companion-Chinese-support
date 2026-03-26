@@ -2172,13 +2172,22 @@ export async function useToolOn(bot, toolName, targetName) {
             log(bot, `Could not find any ${targetName}.`);
             return false;
         }
-        await goToPosition(bot, entity.position.x, entity.position.y, entity.position.z);
+        await goToPosition(bot, entity.position.x, entity.position.y, entity.position.z, 1);
         if (toolName === 'hand') {
             await bot.unequip('hand');
         }
         else {
             const equipped = await equip(bot, toolName);
             if (!equipped) return false;
+        }
+        await bot.lookAt(entity.position);
+        const blockInView = bot.blockAtCursor(5);
+        if (blockInView) {
+            const distToEntity = blockInView.position.distanceTo(entity.position);
+            if (distToEntity > 2) {
+                log(bot, `Cannot use ${toolName} on ${targetName}, ${blockInView.name} is blocking the way.`);
+                return false;
+            }
         }
         await bot.useOn(entity);
         log(bot, `Used ${toolName} on ${targetName}.`);

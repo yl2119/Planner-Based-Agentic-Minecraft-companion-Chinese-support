@@ -11,7 +11,7 @@ const armorManager = plugin;
 let mc_version = settings.minecraft_version;
 let mcdata = null;
 let Item = null;
-
+// mcdata = minecraftData("1.21.1")
 /**
  * @typedef {string} ItemName
  * @typedef {string} BlockName
@@ -777,7 +777,7 @@ export async function createPlan(targetItem, count = 1, current_inventory = {}) 
             addStep({
                 type: 'craft',
                 item: item,
-                amount: planksYielded,
+                amount: logsNeeded,
                 recipeId: 'planks_from_logs',
                 ingredients: [{ name: logType, amount: logsNeeded }],
                 woodNote: woodNote,
@@ -860,7 +860,7 @@ export async function createPlan(targetItem, count = 1, current_inventory = {}) 
             addStep({
                 type: 'craft',
                 item: item,
-                amount: batches * yieldCount,
+                amount: batches,
                 recipeId: getItemId(item),
                 ingredients: ingredientsUsed,
                 woodNote: woodNote,
@@ -984,6 +984,10 @@ export async function createPlan(targetItem, count = 1, current_inventory = {}) 
         // --- Format Step Descriptions ---
         if (step.type === 'collect') {
             let toolStr = step.tool ? `using ${step.tool}` : `by hand`;
+            if (step.woodNote) {
+                step.targetBlock = 'log';
+                step.item = 'log'
+            }
             if (step.targetBlock === step.item) {
                 pushFormattedStep(`Collect ${step.amount} ${step.targetBlock} ${step.woodNote}`);
             } else {
@@ -992,7 +996,11 @@ export async function createPlan(targetItem, count = 1, current_inventory = {}) 
         } else if (step.type === 'craft') {
             let ingStrings = step.ingredients.map(ing => `${ing.amount} ${ing.name}`);
             let ingDesc = ingStrings.length > 0 ? ` from ${ingStrings.join(' and ')}` : '';
-            pushFormattedStep(`Craft ${step.amount} ${step.item}${ingDesc}${step.woodNote}`);
+            if (step.woodNote){
+                pushFormattedStep(`Craft ${step.amount} ${step.item.split('_').slice(-1)[0]}${step.woodNote}`);
+            }else{
+                pushFormattedStep(`Craft ${step.amount} ${step.item}${ingDesc}${step.woodNote}`);
+            }
         } else if (step.type === 'smelt') {
             pushFormattedStep(`Smelt ${step.amount} ${step.ingredient} using ${step.fuelAmount} ${step.fuel} into ${step.item}`);
         } else if (step.type === 'hunt') {
@@ -1020,5 +1028,5 @@ export async function createPlan(targetItem, count = 1, current_inventory = {}) 
     return JSON.stringify({ steps: formattedSteps }, null, 2);
 }
 
-// console.log(createPlan("water_bucket", 1, {"crafting_table":1, "furnace": 1}))
+// console.log(createPlan("cherry_fence", 1, {"crafting_table":1, "furnace": 1}))
 // console.log(getItemCraftingRecipes("dark_oak_planks"))

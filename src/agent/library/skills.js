@@ -2308,41 +2308,19 @@ export async function createTask(bot, targetItem, count, taskDescription) {
 
     const steps = rawSteps.map((step, index) => ({
         step_id: step.step_id || `step_${index + 1}`,
-        description: step.description,
-        status: step.status || (index === 0 ? 'in_progress' : 'pending')
+        description:
+            typeof step.description === 'string' && step.description.trim().length > 0
+                ? step.description.trim()
+                : `Step ${index + 1}`
     }));
 
     const goal =
         taskDescription && typeof taskDescription === 'string'
-            ? taskDescription
+            ? taskDescription.trim()
             : `Collect ${count} ${targetItem}`;
 
     const task = bot.agent.task_manager.createTask(goal, steps);
 
     console.log('Task created through TaskManager:', task.task_id);
     return task;
-}
-export function createTaskFromPlan(taskManager, planResult, taskDescription, targetItem, count) {
-    if (!taskManager) {
-        throw new Error('taskManager is required');
-    }
-
-    const rawSteps = Array.isArray(planResult?.steps) ? planResult.steps : [];
-
-    if (rawSteps.length === 0) {
-        throw new Error('Planner returned no steps');
-    }
-
-    const steps = rawSteps.map((step, index) => ({
-        step_id: step.step_id || `step_${index + 1}`,
-        description: step.description,
-        status: step.status || (index === 0 ? 'in_progress' : 'pending')
-    }));
-
-    const goal =
-        taskDescription && typeof taskDescription === 'string'
-            ? taskDescription
-            : `Collect ${count} ${targetItem}`;
-
-    return taskManager.createTask(goal, steps);
 }

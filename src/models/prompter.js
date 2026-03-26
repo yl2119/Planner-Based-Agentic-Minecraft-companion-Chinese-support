@@ -166,7 +166,7 @@ export class Prompter {
         if (prompt.includes('$MEMORY'))
             prompt = prompt.replaceAll('$MEMORY', this.agent.history.memory);
         if (prompt.includes('$TASK_STATE')) {
-            const taskState = this.agent.task_manager
+            const taskState = this.agent.task_manager 
                 ? this.agent.task_manager.formatForPrompt()
                 : 'No active task.';
             prompt = prompt.replaceAll('$TASK_STATE', taskState);

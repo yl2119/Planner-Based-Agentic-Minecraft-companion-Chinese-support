@@ -359,41 +359,110 @@ export const queryList = [
                 return pad('TaskManager not available.');
             }
 
-            const task = agent.task_manager.getCurrentTask();
-            if (!task) {
-                return pad('No active task.');
-            }
-
             return pad(agent.task_manager.formatForPrompt());
         }
     },
-    {
+        {
         name: '!clearTask',
-        description: 'Clear the current task.',
+        description: 'Clear the current task and all queued tasks.',
         perform: function (agent) {
             if (!agent.task_manager) {
                 return pad('TaskManager not available.');
+            }
+
+            const currentTask = agent.task_manager.getCurrentTask();
+            const queuedTasks = agent.task_manager.getQueuedTasks
+                ? agent.task_manager.getQueuedTasks()
+                : [];
+
+            if (!currentTask && queuedTasks.length === 0) {
+                return pad('No active or queued tasks to clear.');
             }
 
             agent.task_manager.clearCurrentTask();
-            return pad('Current task cleared.');
+            return pad('Current task and all queued tasks cleared.');
         }
     },
-    {
-        name: '!cancelTask',
-        description: 'Cancel the current task.',
+        {
+    name: '!cancelTask',
+    description: 'Cancel the current task, or cancel a queued task by index.',
+    params: {
+        'index': { type: 'int', description: 'Optional queued task index (1-based).' }
+    },
+        perform: function (agent, index = null) {
+            if (!agent.task_manager) {
+                return pad('TaskManager not available.');
+            }
+
+            if (index === null || index === undefined) {
+                const taskBefore = agent.task_manager.getCurrentTask();
+                if (!taskBefore) {
+                    return pad('No active task.');
+                }
+
+                agent.task_manager.cancelTask('cancelled by user');
+
+                const taskAfter = agent.task_manager.getCurrentTask();
+                const stepAfter = agent.task_manager.getCurrentStep
+                    ? agent.task_manager.getCurrentStep()
+                    : null;
+
+                if (taskAfter) {
+                    const nextStepText = stepAfter
+                        ? ` Current step: [${stepAfter.step_id}] ${stepAfter.description}`
+                        : '';
+
+                    return pad(
+                        `Task "${taskBefore.goal}" cancelled. Next task started: ${taskAfter.goal}.${nextStepText}`
+                    );
+                }
+
+                return pad(`Task "${taskBefore.goal}" cancelled. No queued tasks remaining.`);
+            }
+
+            const queueIndex = Number(index);
+            if (!Number.isInteger(queueIndex) || queueIndex < 1) {
+                return pad('Queued task index must be a positive integer.');
+            }
+
+            if (typeof agent.task_manager.cancelQueuedTaskByIndex !== 'function') {
+                return pad('TaskManager does not support cancelling queued tasks by index yet.');
+            }
+
+            const cancelledTask = agent.task_manager.cancelQueuedTaskByIndex(
+                queueIndex,
+                'cancelled by user'
+            );
+
+            if (!cancelledTask) {
+                return pad(`No queued task found at index ${queueIndex}.`);
+            }
+
+            return pad(`Queued task "${cancelledTask.goal}" cancelled.`);
+        }
+    },
+        {
+        name: '!showQueue',
+        description: 'Show queued tasks.',
         perform: function (agent) {
             if (!agent.task_manager) {
                 return pad('TaskManager not available.');
             }
 
-            const task = agent.task_manager.getCurrentTask();
-            if (!task) {
-                return pad('No active task.');
+            const queuedTasks = agent.task_manager.getQueuedTasks
+                ? agent.task_manager.getQueuedTasks()
+                : [];
+
+            if (queuedTasks.length === 0) {
+                return pad('No queued tasks.');
             }
 
-            agent.task_manager.cancelTask('cancelled by user');
-            return pad('Current task cancelled.');
+            const lines = ['Queued Tasks:'];
+            queuedTasks.slice(0, 10).forEach((task, index) => {
+                lines.push(`${index + 1}. ${task.goal}`);
+            });
+
+            return pad(lines.join('\n'));
         }
     },
     {

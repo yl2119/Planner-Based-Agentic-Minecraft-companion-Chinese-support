@@ -647,7 +647,7 @@ export const actionsList = [
         })
     },
 
-    {
+        {
         name: "!createTask",
         description: 'Creates a detailed plan for acquiring an item. Saves the plan and starts tracking progress.',
         params: {
@@ -656,29 +656,68 @@ export const actionsList = [
             'taskDescription': {type: 'string', description: 'A short description of the goal.'},
         },
         perform: runAsAction(async (agent, targetItem, count, taskDescription) => {
-            await skills.createTask(agent.bot, targetItem, count, taskDescription);
-            agent.task_manager.load();
-            const task = agent.task_manager.getCurrentTask();
-            if (task) {
-                skills.log(agent.bot, `Task created with ${task.steps.length} steps. First step: [${task.steps[0].step_id}] ${task.steps[0].description}`);
+            const createdTask = await skills.createTask(agent.bot, targetItem, count, taskDescription);
+
+            if (!createdTask || !createdTask.task_id) {
+                skills.log(agent.bot, 'Task creation did not return a task object.');
+                return;
+            }
+
+            const currentTask = agent.task_manager?.getCurrentTask();
+            const isCurrentTask = currentTask && currentTask.task_id === createdTask.task_id;
+
+            const firstStep = createdTask.steps?.[0];
+            const firstStepText = firstStep
+                ? ` First step: [${firstStep.step_id}] ${firstStep.description}`
+                : '';
+
+            if (isCurrentTask) {
+                skills.log(agent.bot, `Task started: ${createdTask.goal}.${firstStepText}`);
+            } else {
+                skills.log(agent.bot, `Task queued: ${createdTask.goal}.${firstStepText}`);
             }
         })
     },
 
-    {
+        {
         name: '!completeStep',
         description: 'Mark the current task step as completed and advance to the next step.',
         params: {},
         perform: async function(agent) {
-            const step = agent.task_manager.getCurrentStep();
-            if (!step) return 'No active task step to complete.';
-            agent.task_manager.updateStepStatus(step.step_id, 'completed');
-            const next = agent.task_manager.getCurrentStep();
-            if (next) return `Step "${step.description}" completed. Next: [${next.step_id}] ${next.description}`;
-            return `Step "${step.description}" completed. All steps done! Task finished.`;
+            if (!agent.task_manager) {
+                return 'TaskManager not available.';
+            }
+
+            const taskBefore = agent.task_manager.getCurrentTask();
+            const stepBefore = agent.task_manager.getCurrentStep();
+
+            if (!taskBefore || !stepBefore) {
+                return 'No active task step to complete.';
+            }
+
+            agent.task_manager.updateStepStatus(stepBefore.step_id, 'completed');
+
+            const taskAfter = agent.task_manager.getCurrentTask();
+            const stepAfter = agent.task_manager.getCurrentStep();
+
+            if (taskAfter && taskAfter.task_id === taskBefore.task_id) {
+                if (stepAfter) {
+                    return `Step "${stepBefore.description}" completed. Next: [${stepAfter.step_id}] ${stepAfter.description}`;
+                }
+                return `Step "${stepBefore.description}" completed. Task "${taskBefore.goal}" is still active, but no current step is set.`;
+            }
+
+            if (taskAfter && taskAfter.task_id !== taskBefore.task_id) {
+                const nextStepText = stepAfter
+                    ? ` Current step: [${stepAfter.step_id}] ${stepAfter.description}`
+                    : '';
+                return `Step "${stepBefore.description}" completed. Task "${taskBefore.goal}" finished. Next task started: ${taskAfter.goal}.${nextStepText}`;
+            }
+
+            return `Step "${stepBefore.description}" completed. Task "${taskBefore.goal}" finished. No queued tasks remaining.`;
         }
     },
-    {
+        {
         name: '!failStep',
         description: 'Mark the current task step as failed.',
         perform: async function(agent, reason = 'step failed') {
@@ -686,13 +725,15 @@ export const actionsList = [
                 return 'TaskManager not available.';
             }
 
+            const task = agent.task_manager.getCurrentTask();
             const step = agent.task_manager.getCurrentStep();
-            if (!step) {
+
+            if (!task || !step) {
                 return 'No active task step to fail.';
             }
 
             agent.task_manager.recordStepFailure(step.step_id);
-            return `Step "${step.description}" failed: ${reason}`;
+            return `Step "${step.description}" marked as failed: ${reason}. Task "${task.goal}" remains active on this step.`;
         }
     },
     

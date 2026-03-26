@@ -3,41 +3,53 @@ import path from 'path';
 
 const TASK_STATUSES = ['pending', 'in_progress', 'completed', 'failed', 'cancelled'];
 const STEP_STATUSES = ['pending', 'in_progress', 'completed', 'failed', 'blocked'];
+const TASK_INDEX_FILE = 'index.json';
 
 export class TaskManager {
     constructor(agent) {
         this.agent = agent;
         this.currentTask = null;
+        this.taskQueue = [];
     }
 
-    getTaskFilePath() {
-        if (this.currentTask && this.currentTask.task_id) {
-            return path.join('.', 'bots', this.agent.name, 'tasks', `${this.currentTask.task_id}.json`);
-        }
-        return path.join('.', 'bots', this.agent.name, 'tasks', 'current_task.json');
-    }
-    
     getTasksDir() {
         return path.join('.', 'bots', this.agent.name, 'tasks');
     }
 
-    generateTaskId() {
-        const now = new Date();
-        const stamp = now.toISOString().replace(/[-:.TZ]/g, '').slice(0, 14);
-        return `task_${stamp}`;
+    ensureTasksDir() {
+        const tasksDir = this.getTasksDir();
+        if (!existsSync(tasksDir)) {
+            mkdirSync(tasksDir, { recursive: true });
+        }
+        return tasksDir;
     }
 
-    generateStepId(index) {
-        return `step_${index + 1}`;
+    getTaskFilePath(task = this.currentTask) {
+        if (!task || !task.task_id) {
+            throw new Error('task must have a task_id');
+        }
+        return path.join(this.getTasksDir(), `${task.task_id}.json`);
+    }
+
+    getTaskIndexPath() {
+        return path.join(this.getTasksDir(), TASK_INDEX_FILE);
     }
 
     nowIso() {
         return new Date().toISOString();
     }
 
-    touchTask() {
-        if (this.currentTask) {
-            this.currentTask.updated_at = this.nowIso();
+    generateTaskId() {
+        return `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    generateStepId(index) {
+        return `step_${index + 1}`;
+    }
+
+    touchTask(task = this.currentTask) {
+        if (task) {
+            task.updated_at = this.nowIso();
         }
     }
 
@@ -63,36 +75,42 @@ export class TaskManager {
         return steps.map((step, index) => ({
             step_id: step.step_id || this.generateStepId(index),
             description: step.description.trim(),
-            status: index === 0 ? 'in_progress' : 'pending'
+            status: 'pending'
         }));
     }
 
-    createTask(goal, steps) {
+    buildTask(goal, steps, meta = {}) {
         this.validateGoal(goal);
         this.validateSteps(steps);
 
         const now = this.nowIso();
         const normalizedSteps = this.normalizeSteps(steps);
 
-        this.currentTask = {
+        return {
             task_id: this.generateTaskId(),
             goal: goal.trim(),
-            status: 'in_progress',
-            current_step_id: normalizedSteps[0].step_id,
+            status: 'pending',
+            current_step_id: null,
             failure_reason: null,
             cancel_reason: null,
             created_at: now,
             updated_at: now,
             completed_at: null,
+            ...meta,
             steps: normalizedSteps
         };
+    }
 
-        this.save();
-        return this.currentTask;
+    hasActiveTask() {
+        return !!(this.currentTask && this.currentTask.status === 'in_progress');
     }
 
     getCurrentTask() {
         return this.currentTask;
+    }
+
+    getQueuedTasks() {
+        return [...this.taskQueue];
     }
 
     getStepById(stepId) {
@@ -107,6 +125,66 @@ export class TaskManager {
         return this.getStepById(this.currentTask.current_step_id);
     }
 
+    startTask(task) {
+        if (!task) {
+            throw new Error('task is required');
+        }
+
+        const firstIncompleteStep = task.steps.find(step => step.status !== 'completed') || null;
+
+        for (const step of task.steps) {
+            if (step.status === 'in_progress') {
+                step.status = 'pending';
+            }
+        }
+
+        if (firstIncompleteStep) {
+            firstIncompleteStep.status = 'in_progress';
+            task.current_step_id = firstIncompleteStep.step_id;
+            task.status = 'in_progress';
+            task.completed_at = null;
+        } else {
+            task.current_step_id = null;
+            task.status = 'completed';
+            task.completed_at = task.completed_at || this.nowIso();
+        }
+
+        task.failure_reason = null;
+        task.cancel_reason = null;
+        this.touchTask(task);
+
+        this.currentTask = task;
+        this.save();
+        return this.currentTask;
+    }
+
+    enqueueTask(goal, steps, meta = {}) {
+        const task = this.buildTask(goal, steps, meta);
+
+        if (!this.hasActiveTask()) {
+            return this.startTask(task);
+        }
+
+        this.taskQueue.push(task);
+        this.save();
+        return task;
+    }
+
+    createTask(goal, steps, meta = {}) {
+        return this.enqueueTask(goal, steps, meta);
+    }
+
+    advanceToNextTask() {
+        if (this.taskQueue.length === 0) {
+            this.currentTask = null;
+            this.save();
+            return null;
+        }
+
+        const nextTask = this.taskQueue.shift();
+        return this.startTask(nextTask);
+    }
+
     updateStepStatus(stepId, status) {
         if (!this.currentTask) {
             throw new Error('no current task');
@@ -116,9 +194,19 @@ export class TaskManager {
             throw new Error(`invalid step status: ${status}`);
         }
 
+        if (this.currentTask.current_step_id !== stepId) {
+            throw new Error(`can only update current step: ${this.currentTask.current_step_id}`);
+        }
+
         const step = this.getStepById(stepId);
         if (!step) {
             throw new Error(`step not found: ${stepId}`);
+        }
+
+        for (const s of this.currentTask.steps) {
+            if (s.step_id !== stepId && s.status === 'in_progress') {
+                s.status = 'pending';
+            }
         }
 
         step.status = status;
@@ -138,12 +226,7 @@ export class TaskManager {
                 return this.markTaskComplete();
             }
 
-            if (this.currentTask.current_step_id === stepId) {
-                return this.advanceToNextStep();
-            }
-
-            this.save();
-            return this.currentTask;
+            return this.advanceToNextStep();
         }
 
         if (status === 'failed' || status === 'blocked') {
@@ -153,7 +236,7 @@ export class TaskManager {
             return this.currentTask;
         }
 
-        if (status === 'pending' && this.currentTask.current_step_id === stepId) {
+        if (status === 'pending') {
             this.currentTask.current_step_id = null;
         }
 
@@ -171,8 +254,11 @@ export class TaskManager {
             throw new Error(`step not found: ${stepId}`);
         }
 
-        step.status = 'failed';
+        if (this.currentTask.current_step_id !== stepId) {
+            throw new Error(`can only fail current step: ${this.currentTask.current_step_id}`);
+        }
 
+        step.status = 'failed';
         this.currentTask.status = 'in_progress';
         this.currentTask.current_step_id = stepId;
         this.touchTask();
@@ -191,8 +277,11 @@ export class TaskManager {
             throw new Error(`step not found: ${stepId}`);
         }
 
-        step.status = 'blocked';
+        if (this.currentTask.current_step_id !== stepId) {
+            throw new Error(`can only block current step: ${this.currentTask.current_step_id}`);
+        }
 
+        step.status = 'blocked';
         this.currentTask.status = 'in_progress';
         this.currentTask.current_step_id = stepId;
         this.touchTask();
@@ -209,6 +298,16 @@ export class TaskManager {
         const step = this.getStepById(stepId);
         if (!step) {
             throw new Error(`step not found: ${stepId}`);
+        }
+
+        if (this.currentTask.current_step_id !== stepId) {
+            throw new Error(`can only retry current step: ${this.currentTask.current_step_id}`);
+        }
+
+        for (const s of this.currentTask.steps) {
+            if (s.step_id !== stepId && s.status === 'in_progress') {
+                s.status = 'pending';
+            }
         }
 
         step.status = 'in_progress';
@@ -231,6 +330,12 @@ export class TaskManager {
             return this.markTaskComplete();
         }
 
+        for (const step of this.currentTask.steps) {
+            if (step.status === 'in_progress') {
+                step.status = 'pending';
+            }
+        }
+
         nextStep.status = 'in_progress';
         this.currentTask.current_step_id = nextStep.step_id;
         this.currentTask.status = 'in_progress';
@@ -245,14 +350,24 @@ export class TaskManager {
             throw new Error('no current task');
         }
 
+        const completedTask = this.currentTask;
         const now = this.nowIso();
-        this.currentTask.status = 'completed';
-        this.currentTask.current_step_id = null;
-        this.currentTask.completed_at = now;
-        this.currentTask.updated_at = now;
-        this.save();
 
-        return this.currentTask;
+        completedTask.status = 'completed';
+        completedTask.current_step_id = null;
+        completedTask.completed_at = now;
+        completedTask.updated_at = now;
+        completedTask.steps = completedTask.steps.map(step => ({
+            ...step,
+            status: step.status === 'blocked' || step.status === 'failed' ? step.status : 'completed'
+        }));
+
+        this.writeTaskFile(completedTask);
+        this.currentTask = null;
+        this.saveIndex();
+        this.advanceToNextTask();
+
+        return completedTask;
     }
 
     markTaskFailed(reason = 'unknown failure') {
@@ -260,13 +375,19 @@ export class TaskManager {
             throw new Error('no current task');
         }
 
-        this.currentTask.status = 'failed';
-        this.currentTask.failure_reason = reason;
-        this.currentTask.current_step_id = null;
-        this.touchTask();
-        this.save();
+        const failedTask = this.currentTask;
 
-        return this.currentTask;
+        failedTask.status = 'failed';
+        failedTask.failure_reason = reason;
+        failedTask.current_step_id = null;
+        this.touchTask(failedTask);
+
+        this.writeTaskFile(failedTask);
+        this.currentTask = null;
+        this.saveIndex();
+        this.advanceToNextTask();
+
+        return failedTask;
     }
 
     cancelTask(reason = 'cancelled') {
@@ -274,77 +395,196 @@ export class TaskManager {
             throw new Error('no current task');
         }
 
-        this.currentTask.status = 'cancelled';
-        this.currentTask.cancel_reason = reason;
-        this.currentTask.current_step_id = null;
-        this.touchTask();
+        const cancelledTask = this.currentTask;
+
+        cancelledTask.status = 'cancelled';
+        cancelledTask.cancel_reason = reason;
+        cancelledTask.current_step_id = null;
+        this.touchTask(cancelledTask);
+
+        this.writeTaskFile(cancelledTask);
+        this.currentTask = null;
+        this.saveIndex();
+        this.advanceToNextTask();
+
+        return cancelledTask;
+    }
+
+    cancelQueuedTaskByIndex(index, reason = 'cancelled by user') {
+        if (!Number.isInteger(index) || index < 1) {
+            throw new Error('queue index must be a positive integer');
+        }
+
+        const queueArrayIndex = index - 1;
+        const task = this.taskQueue[queueArrayIndex];
+
+        if (!task) {
+            return null;
+        }
+
+        task.status = 'cancelled';
+        task.cancel_reason = reason;
+        task.current_step_id = null;
+        this.touchTask(task);
+
+        this.writeTaskFile(task);
+        this.taskQueue.splice(queueArrayIndex, 1);
+        this.saveIndex();
+
+        return task;
+    }
+
+    clearCurrentTask() {
+        this.currentTask = null;
+        this.taskQueue = [];
+        this.save();
+    }
+
+    writeTaskFile(task) {
+        const filePath = this.getTaskFilePath(task);
+        writeFileSync(filePath, JSON.stringify(task, null, 2), 'utf8');
+    }
+
+    saveIndex() {
+        this.ensureTasksDir();
+
+        const index = {
+            current_task_id: this.currentTask ? this.currentTask.task_id : null,
+            queued_task_ids: this.taskQueue.map(task => task.task_id)
+        };
+
+        writeFileSync(this.getTaskIndexPath(), JSON.stringify(index, null, 2), 'utf8');
+    }
+
+    save() {
+        try {
+            this.ensureTasksDir();
+
+            if (this.currentTask) {
+                this.writeTaskFile(this.currentTask);
+            }
+
+            for (const task of this.taskQueue) {
+                this.writeTaskFile(task);
+            }
+
+            this.saveIndex();
+        } catch (err) {
+            console.error('Error saving task state:', err);
+        }
+    }
+
+    loadTaskById(taskId) {
+        try {
+            const filePath = this.getTaskFilePath({ task_id: taskId });
+            if (!existsSync(filePath)) {
+                return null;
+            }
+
+            const raw = readFileSync(filePath, 'utf8').trim();
+            if (!raw) {
+                return null;
+            }
+
+            const parsed = JSON.parse(raw);
+            if (!this.isValidTaskObject(parsed)) {
+                return null;
+            }
+
+            return parsed;
+        } catch {
+            return null;
+        }
+    }
+
+    loadFromIndex() {
+        const indexPath = this.getTaskIndexPath();
+        if (!existsSync(indexPath)) {
+            return null;
+        }
+
+        const raw = readFileSync(indexPath, 'utf8').trim();
+        if (!raw) {
+            return null;
+        }
+
+        const index = JSON.parse(raw);
+
+        const currentTask = index.current_task_id
+            ? this.loadTaskById(index.current_task_id)
+            : null;
+
+        const queuedTasks = Array.isArray(index.queued_task_ids)
+            ? index.queued_task_ids
+                .map(taskId => this.loadTaskById(taskId))
+                .filter(Boolean)
+            : [];
+
+        this.currentTask = currentTask && currentTask.status === 'in_progress'
+            ? currentTask
+            : null;
+
+        this.taskQueue = queuedTasks.filter(task => task.status === 'pending');
+
+        return this.currentTask;
+    }
+
+    loadLegacyFallback() {
+        const tasksDir = this.getTasksDir();
+        const files = readdirSync(tasksDir)
+            .filter(file => file.startsWith('task_') && file.endsWith('.json'))
+            .sort();
+
+        const tasks = [];
+
+        for (const file of files) {
+            try {
+                const filePath = path.join(tasksDir, file);
+                const raw = readFileSync(filePath, 'utf8').trim();
+                if (!raw) continue;
+
+                const parsed = JSON.parse(raw);
+                if (!this.isValidTaskObject(parsed)) continue;
+
+                tasks.push(parsed);
+            } catch {
+                continue;
+            }
+        }
+
+        const inProgressTasks = tasks.filter(task => task.status === 'in_progress');
+        const pendingTasks = tasks.filter(task => task.status === 'pending');
+
+        this.currentTask = inProgressTasks.length > 0
+            ? inProgressTasks[inProgressTasks.length - 1]
+            : null;
+
+        this.taskQueue = pendingTasks;
         this.save();
 
         return this.currentTask;
     }
 
-    clearCurrentTask() {
-        this.currentTask = null;
-        this.save();
-    }
-
-    save() {
-        try {
-            const filePath = this.getTaskFilePath();
-            const dirPath = path.dirname(filePath);
-
-            if (!existsSync(dirPath)) {
-                mkdirSync(dirPath, { recursive: true });
-            }
-
-            writeFileSync(filePath, JSON.stringify(this.currentTask, null, 2), 'utf8');
-        } catch (err) {
-            console.error('Error saving current task:', err);
-        }
-    }
-
     load() {
         try {
             const tasksDir = this.getTasksDir();
+
             if (!existsSync(tasksDir)) {
                 this.currentTask = null;
+                this.taskQueue = [];
                 return null;
             }
-    
-            const files = readdirSync(tasksDir)
-                .filter(f => f.startsWith('task_') && f.endsWith('.json'))
-                .sort()
-                .reverse();
-    
-            for (const file of files) {
-                try {
-                    const filePath = path.join(tasksDir, file);
-                    const raw = readFileSync(filePath, 'utf8').trim();
-                    if (!raw) continue;
-                    const parsed = JSON.parse(raw);
-                    if (!this.isValidTaskObject(parsed)) continue;
-                    if (parsed.status === 'in_progress') {
-                        parsed.steps = parsed.steps.map(step => ({
-                            step_id: step.step_id,
-                            description: step.description,
-                            status: step.status || 'pending'
-                        }));
-                        parsed.failure_reason = parsed.failure_reason ?? null;
-                        parsed.cancel_reason = parsed.cancel_reason ?? null;
-                        parsed.completed_at = parsed.completed_at ?? null;
-                        this.currentTask = parsed;
-                        return this.currentTask;
-                    }
-                } catch {
-                    continue;
-                }
+
+            const loadedFromIndex = this.loadFromIndex();
+            if (loadedFromIndex || this.taskQueue.length > 0) {
+                return this.currentTask;
             }
-    
-            this.currentTask = null;
-            return null;
+
+            return this.loadLegacyFallback();
         } catch (err) {
             console.error('Error loading task:', err);
             this.currentTask = null;
+            this.taskQueue = [];
             return null;
         }
     }
@@ -376,52 +616,56 @@ export class TaskManager {
         return `- [${step.step_id}] ${step.description}`;
     }
 
+    formatTaskSummaryLine(task, index) {
+        return `${index + 1}. [${task.task_id}] ${task.goal}`;
+    }
+
     formatForPrompt() {
+    const queuedTasks = this.getQueuedTasks();
+
         if (!this.currentTask) {
-            return 'No active task.';
+            if (queuedTasks.length === 0) {
+                return 'No active task.';
+            }
+
+            return [
+                'Active Task:',
+                'Goal: None',
+                'Status: None',
+                'Current Step: None',
+                '',
+                'Queued Tasks:',
+                ...queuedTasks.slice(0, 3).map((task) => `- ${task.goal}`)
+            ].join('\n');
         }
 
         const task = this.currentTask;
         const currentStep = this.getCurrentStep();
-        const completedSteps = task.steps.filter(step => step.status === 'completed');
-        const pendingSteps = task.steps.filter(step => step.status === 'pending');
-        const inProgressSteps = task.steps.filter(step => step.status === 'in_progress');
-        const blockedSteps = task.steps.filter(step => step.status === 'blocked');
-        const failedSteps = task.steps.filter(step => step.status === 'failed');
 
-        const formatStepList = (steps) =>
-            steps.length > 0
-                ? steps.map(step => this.formatStepLine(step)).join('\n')
-                : '- None';
-
-        let text = '';
-        text += `Goal: ${task.goal}\n`;
-        text += `Task Status: ${task.status}\n`;
-        text += `Current Step: ${currentStep ? `[${currentStep.step_id}] ${currentStep.description}` : 'None'}\n`;
+        const lines = [
+            'Active Task:',
+            `Goal: ${task.goal}`,
+            `Status: ${task.status}`,
+            `Current Step: ${currentStep ? `[${currentStep.step_id}] ${currentStep.description}` : 'None'}`
+        ];
 
         if (task.failure_reason) {
-            text += `Failure Reason: ${task.failure_reason}\n`;
+            lines.push(`Failure Reason: ${task.failure_reason}`);
         }
 
         if (task.cancel_reason) {
-            text += `Cancel Reason: ${task.cancel_reason}\n`;
+            lines.push(`Cancel Reason: ${task.cancel_reason}`);
         }
 
-        text += '\nCompleted Steps:\n';
-        text += formatStepList(completedSteps);
+        lines.push('');
+        lines.push('Queued Tasks:');
 
-        text += '\n\nIn Progress Steps:\n';
-        text += formatStepList(inProgressSteps);
+        if (queuedTasks.length === 0) {
+            lines.push('- None');
+        } else {
+            lines.push(...queuedTasks.slice(0, 3).map((queuedTask) => `- ${queuedTask.goal}`));
+        }
 
-        text += '\n\nPending Steps:\n';
-        text += formatStepList(pendingSteps);
-
-        text += '\n\nBlocked Steps:\n';
-        text += formatStepList(blockedSteps);
-
-        text += '\n\nFailed Steps:\n';
-        text += formatStepList(failedSteps);
-
-        return text;
+        return lines.join('\n');
     }
 }

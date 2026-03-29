@@ -736,5 +736,24 @@ export const actionsList = [
             return `Step "${step.description}" marked as failed: ${reason}. Task "${task.goal}" remains active on this step.`;
         }
     },
-    
+        {
+        name: '!replaceStep',
+        description: 'Replace the current task step with a new approach. Use when the current step is impossible or the player suggests a better method.',
+        params: {
+            'new_description': { type: 'string', description: 'The new step description to replace the current one with.' }
+        },
+        perform: async function(agent, new_description) {
+            if (!agent.task_manager) {
+                return 'TaskManager not available.';
+            }
+            const step = agent.task_manager.getCurrentStep();
+            if (!step) {
+                return 'No active task step to replace.';
+            }
+            const old = step.description;
+            agent.task_manager.replaceCurrentStep(new_description);
+            return `Step replaced: "${old}" -> "${new_description}"`;
+        }
+    },
+        
 ];

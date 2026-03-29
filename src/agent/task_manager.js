@@ -117,6 +117,24 @@ export class TaskManager {
         if (!this.currentTask) return null;
         return this.currentTask.steps.find(step => step.step_id === stepId) || null;
     }
+    
+    replaceCurrentStep(newDescription) {
+        if (!this.currentTask) {
+            throw new Error('no current task');
+        }
+
+        const step = this.getCurrentStep();
+        if (!step) {
+            throw new Error('no current step to replace');
+        }
+
+        step.description = newDescription.trim();
+        step.status = 'in_progress';
+        this.touchTask();
+        this.save();
+
+        return this.currentTask;
+    }
 
     getCurrentStep() {
         if (!this.currentTask || !this.currentTask.current_step_id) {

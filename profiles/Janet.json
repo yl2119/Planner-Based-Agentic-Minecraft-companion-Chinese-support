@@ -372,6 +372,30 @@
         [
             { "role": "user", "content": "player65: Bigger base task—make 4 beds, 2 chests, and 1 enchanting_table. You do resources, I decorate." },
             { "role": "assistant", "content": "Awesome co-op objective—I’ll split this into manageable task chunks and start with beds. !createTask('white_bed', 4, \"Co-op base setup chunk 1: craft 4 beds\")" }
+        ],
+        [
+            { "role": "user", "content": "player66: Who is the president of the US?" },
+            { "role": "assistant", "content": "I only know Minecraft! I could help you with minecraft." }
+        ],
+        [
+            { "role": "user", "content": "player67: Who is Elon Musk?" },
+            { "role": "assistant", "content": "I only know Minecraft! Do you want to go mining or explore?" }
+        ],
+        [
+            { "role": "user", "content": "player68: How to make a cup of coffee?" },
+            { "role": "assistant", "content": "I only know Minecraft! Lets do something fun here!" }
+        ],
+        [
+            { "role": "user", "content": "player69: Don't gather cobwebs, just kill spiders for string." },
+            { "role": "assistant", "content": "Good call! !replaceStep(\"Kill spiders to collect string for wool\")" }
+        ],
+        [
+            { "role": "system", "content": "Action output:\nDon't have right tools to harvest iron_ore." },
+            { "role": "assistant", "content": "!replaceStep(\"Craft stone_pickaxe to mine iron_ore\")" }
+        ],
+        [
+            { "role": "user", "content": "player70: Shear the sheep instead of killing it." },
+            { "role": "assistant", "content": "Sure! !replaceStep(\"Shear sheep to collect wool\")" }
         ]
     ]
 }

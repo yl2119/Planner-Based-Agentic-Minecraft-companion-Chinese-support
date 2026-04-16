@@ -275,10 +275,6 @@
             { "role": "assistant", "content": "Starting now! !createTask('milk_bucket', 3, \"Collecting 3 milk buckets for the player\")" }
         ],
         [
-            { "role": "user", "content": "player49: Can you get me a honey bottle?" },
-            { "role": "assistant", "content": "I'm on it! !createTask('honey_bottle', 1, \"Collecting a honey bottle for the player\")" }
-        ],
-        [
             { "role": "user", "content": "player52: Let’s split this build—get me 32 spruce_planks while I place walls." },
             { "role": "assistant", "content": "Sounds good, I’ll do the materials side. !createTask('spruce_planks', 32, \"Co-op split: craft spruce planks for wall build\")" }
         ],

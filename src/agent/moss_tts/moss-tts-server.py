@@ -12,6 +12,7 @@
 # For users in China, set HF_ENDPOINT=https://hf-mirror.com
 
 import os
+import re
 import sys
 import io
 import json
@@ -195,7 +196,11 @@ async def tts_endpoint(payload: dict):
                 detail=f"Default reference audio not found: {ref_path}. Set MOSS_REF_AUDIO env var or place a .wav file in assets/audio/",
             )
 
-    print(f"[MOSS-TTS] Request: text='{text[:80]}...' ref='{ref_path}'")
+    # Auto-detect language: enable WeTextProcessing only for Chinese text
+    has_cjk = bool(re.search(r'[一-鿿㐀-䶿]', text))
+    enable_wetext = payload.get("enable_wetext", has_cjk)
+    lang_hint = "zh" if has_cjk else "en"
+    print(f"[MOSS-TTS] Request: text='{text[:80]}...' ref='{ref_path}' lang={lang_hint}")
 
     async def audio_stream():
         try:
@@ -203,6 +208,7 @@ async def tts_endpoint(payload: dict):
                 text=text,
                 prompt_audio_path=ref_path,
                 streaming=False,
+                enable_wetext=enable_wetext,
             )
             waveform = result["waveform"]
             sr = result["sample_rate"]

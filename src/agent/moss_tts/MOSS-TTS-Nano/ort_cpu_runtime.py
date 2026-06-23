@@ -376,12 +376,13 @@ class OrtCpuRuntime:
                 return rewritten
         return resolved
 
-    def _session(self, path_value: Path) -> ort.InferenceSession:
+    def _session(self, path_value: Path, force_cpu: bool = False) -> ort.InferenceSession:
         options = ort.SessionOptions()
         options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
         options.intra_op_num_threads = self.thread_count
         options.inter_op_num_threads = 1
-        session = ort.InferenceSession(str(path_value), sess_options=options, providers=self.ort_providers)
+        providers = ["CPUExecutionProvider"] if force_cpu else self.ort_providers
+        session = ort.InferenceSession(str(path_value), sess_options=options, providers=providers)
         if self.execution_provider == EXECUTION_PROVIDER_CUDA and "CUDAExecutionProvider" not in session.get_providers():
             raise RuntimeError(
                 "CUDAExecutionProvider was requested, but ONNX Runtime created a session without CUDA support "
@@ -411,9 +412,9 @@ class OrtCpuRuntime:
                 if self.tts_meta["files"].get("local_cached_step")
                 else {}
             ),
-            "codec_encode": self._session(codec_dir / self.codec_meta["files"]["encode"]),
-            "codec_decode": self._session(codec_dir / self.codec_meta["files"]["decode_full"]),
-            "codec_decode_step": self._session(codec_dir / self.codec_meta["files"]["decode_step"]),
+            "codec_encode": self._session(codec_dir / self.codec_meta["files"]["encode"], force_cpu=True),
+            "codec_decode": self._session(codec_dir / self.codec_meta["files"]["decode_full"], force_cpu=True),
+            "codec_decode_step": self._session(codec_dir / self.codec_meta["files"]["decode_step"], force_cpu=True),
         }
 
     def list_builtin_voices(self) -> list[dict[str, Any]]:

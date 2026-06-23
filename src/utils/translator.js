@@ -11,7 +11,9 @@ export async function handleTranslation(message) {
         const translation = await translate(message, { to: preferred_lang, forceTo: true });
         return translation.text || message;
     } catch (error) {
-        console.error('Error translating message:', error);
+        // Google Translate is blocked in China — just return original silently
+        if (error?.cause?.code !== 'UND_ERR_CONNECT_TIMEOUT')
+            console.error('Error translating message:', error.message);
         return message;
     }
 }
@@ -24,7 +26,9 @@ export async function handleEnglishTranslation(message) {
         const translation = await translate(message, { to: 'english' });
         return translation.text || message;
     } catch (error) {
-        console.error('Error translating message:', error);
+        // Google Translate is blocked in China — just return original silently
+        if (error?.cause?.code !== 'UND_ERR_CONNECT_TIMEOUT')
+            console.error('Error translating message:', error.message);
         return message;
     }
 }

@@ -47,9 +47,9 @@ export class TTSService {
             // Set a timeout in case the server takes too long or fails silently
             const bootTimeout = setTimeout(() => {
                 if (!resolved && !this.isReady) {
-                    reject(new Error('[TTS] MOSS-TTS-Nano server did not start within 60 seconds'));
+                    reject(new Error('[TTS] MOSS-TTS-Nano server did not start within 5 minutes (model download may be slow)'));
                 }
-            }, 60000);
+            }, 300000);
 
             // spawn the venv python and point cwd to the server directory
             this.pythonServer = spawn(venvPython, ['moss-tts-server.py'], {

@@ -10,8 +10,9 @@ const settings = {
     
     "base_profile": "assistant", // survival, assistant, creative, or god_mode
     "profiles": [
-        "./profiles/Janet.json"
+        "./profiles/deepseek.json"
         // "./andy.json",
+        // "./profiles/Janet.json",
         // "./profiles/gpt.json",
         // "./profiles/claude.json",
         // "./profiles/gemini.json",
@@ -19,7 +20,6 @@ const settings = {
         // "./profiles/qwen.json",
         // "./profiles/grok.json",
         // "./profiles/mistral.json",
-        // "./profiles/deepseek.json",
         // "./profiles/mercury.json",
         // "./profiles/andy-4.json", // Supports up to 75 messages!
 
@@ -45,7 +45,7 @@ const settings = {
     "asr_key": "v",           // push-to-talk key
 
     "chat_ingame": true, // bot responses are shown in minecraft chat
-    "language": "en", // translate to/from this language. Supports these language names: https://cloud.google.com/translate/docs/languages
+    "language": "zh", // translate to/from this language. Supports these language names: https://cloud.google.com/translate/docs/languages
     "render_bot_view": false, // show bot's view in browser at localhost:3000, 3001...
 
     "allow_insecure_coding": false, // allows newAction command and model can write/run code on your computer. enable at own risk

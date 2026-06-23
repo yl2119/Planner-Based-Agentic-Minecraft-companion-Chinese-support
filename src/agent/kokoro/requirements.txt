@@ -1,6 +1,0 @@
-onnxruntime-gpu
-fastapi
-uvicorn[standard]
-pydantic
-numpy
-kokoro-onnx

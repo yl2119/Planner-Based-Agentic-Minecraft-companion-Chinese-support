@@ -17,7 +17,7 @@ app.add_middleware(
 )
 
 # Configuration
-ASR_LANGUAGE = os.getenv("ASR_LANGUAGE", "en").strip()
+ASR_LANGUAGE = os.getenv("ASR_LANGUAGE", "zh").strip()
 
 # Load ASR model
 device = "cuda" if torch.cuda.is_available() else "cpu"

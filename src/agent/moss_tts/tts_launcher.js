@@ -1,19 +1,19 @@
 import { spawn, execSync } from 'child_process';
 import { existsSync, readFileSync, rmSync } from 'fs';
-import 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import which from 'which';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..');
 
 export class TTSService {
     constructor() {
         this.pythonServer = null;
         this.isReady = false;
         this.readyCallbacks = [];
-        
+
         // Task Queue properties
         this.queue = [];
         this.isSpeaking = false;
@@ -26,13 +26,16 @@ export class TTSService {
             console.error('[TTS] ffplay not found. Please install ffmpeg.');
         }
 
-        const venvPython = this.ensureVenv(__dirname, 'TTS server');
+        const venvPython = this.ensureVenv(__dirname, 'MOSS-TTS server');
         if (!venvPython) {
             console.error('[TTS] Failed to prepare Python environment. Aborting boot.');
             return Promise.reject(new Error('Failed to prepare Python environment'));
         }
 
-        console.log('[TTS] Starting Kokoro-TTS Server');
+        console.log('[TTS] Starting MOSS-TTS-Nano Server');
+
+        const defaultRefAudio = process.env.MOSS_REF_AUDIO ||
+            path.join(PROJECT_ROOT, 'assets', 'audio', 'zh_1.wav');
 
         // Return a promise that resolves when the server is ready
         return new Promise((resolve, reject) => {
@@ -44,21 +47,24 @@ export class TTSService {
             // Set a timeout in case the server takes too long or fails silently
             const bootTimeout = setTimeout(() => {
                 if (!resolved && !this.isReady) {
-                    reject(new Error('[TTS] Server did not start within 30 seconds'));
+                    reject(new Error('[TTS] MOSS-TTS-Nano server did not start within 60 seconds'));
                 }
-            }, 30000);
+            }, 60000);
 
             // spawn the venv python and point cwd to the server directory
-            this.pythonServer = spawn(venvPython, ['kokoro-tts-server.py'], {
+            this.pythonServer = spawn(venvPython, ['moss-tts-server.py'], {
                 cwd: __dirname,
-                env: { ...process.env }, // preserve env (you can add/override env vars here)
+                env: {
+                    ...process.env,
+                    MOSS_REF_AUDIO: defaultRefAudio,
+                },
                 stdio: ['pipe', 'pipe', 'pipe']
             });
 
             // Show output to console for easier debugging
             this.pythonServer.stdout.on('data', (d) => {
                 const out = d.toString();
-                process.stdout.write(`[python stdout] ${out}`);
+                process.stdout.write(`[MOSS-TTS stdout] ${out}`);
                 if (out.includes('Application startup complete') && !this.isReady && !resolved) {
                     clearTimeout(bootTimeout);
                     this._markReady();
@@ -69,7 +75,7 @@ export class TTSService {
 
             this.pythonServer.stderr.on('data', (d) => {
                 const out = d.toString();
-                process.stderr.write(`[python stderr] ${out}`);
+                process.stderr.write(`[MOSS-TTS stderr] ${out}`);
                 if (out.includes('Application startup complete') && !this.isReady && !resolved) {
                     clearTimeout(bootTimeout);
                     this._markReady();
@@ -88,7 +94,7 @@ export class TTSService {
             });
 
             this.pythonServer.on('exit', (code, signal) => {
-                console.log(`[TTS] Python server exited. code=${code} signal=${signal}`);
+                console.log(`[TTS] MOSS-TTS-Nano server exited. code=${code} signal=${signal}`);
                 this.isReady = false;
                 clearTimeout(bootTimeout);
                 if (!resolved && code !== 0) {
@@ -104,7 +110,7 @@ export class TTSService {
 
     _markReady() {
         this.isReady = true;
-        console.log('TTS Server is Ready.');
+        console.log('[TTS] MOSS-TTS-Nano Server is Ready.');
         this.readyCallbacks.forEach(cb => cb());
         this.readyCallbacks = [];
     }
@@ -115,76 +121,72 @@ export class TTSService {
     }
 
     speak(text) {
-        // console.log(`Added to queue: "${text.substring(0, 40)}..."`);
         this.queue.push(text);
         this._processQueue();
     }
 
     // Internal loop that handles the timing
     async _processQueue() {
-    if (this.isSpeaking || this.queue.length === 0) return;
-    
-    this.isSpeaking = true;
-    const text = this.queue.shift();
-    console.log(`🗣️ Speaking: "${text}"`);
+        if (this.isSpeaking || this.queue.length === 0) return;
 
-    try {
-        const response = await fetch('http://127.0.0.1:8000/tts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: text, voice: 'af_heart' })
-        });
+        this.isSpeaking = true;
+        const text = this.queue.shift();
+        console.log(`[TTS] Speaking: "${text.substring(0, 50)}..."`);
 
-        if (!response.body) throw new Error('No response body');
+        try {
+            const response = await fetch('http://127.0.0.1:8001/tts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: text })
+            });
 
-        // Spawn ffplay with verbose logging (remove -loglevel quiet for now)
+            if (!response.body) throw new Error('No response body');
 
-        const isWin = process.platform === 'win32';
+            // Spawn ffplay for 48000 Hz stereo PCM
+            const isWin = process.platform === 'win32';
 
-        const player = isWin ? spawn('ffplay', [
-            '-autoexit', '-nodisp',
-            '-f', 's16le', '-ar', '24000', '-ch_layout', 'mono', '-i', '-'
-        ]) : 
-        spawn('ffplay', [
-            '-autoexit', '-nodisp',
-            '-f', 's16le', '-ar', '24000', '-ac', '1', '-i', '-'
-        ]);
+            const player = isWin ? spawn('ffplay', [
+                '-autoexit', '-nodisp',
+                '-f', 's16le', '-ar', '48000', '-ch_layout', 'stereo', '-i', '-'
+            ]) :
+            spawn('ffplay', [
+                '-autoexit', '-nodisp',
+                '-f', 's16le', '-ar', '48000', '-ac', '2', '-i', '-'
+            ]);
 
-        const reader = response.body.getReader();
+            const reader = response.body.getReader();
 
-        // Read chunks and pipe to speaker
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            // Handle backpressure: if player.stdin.write returns false, wait for drain
-            if (!player.stdin.write(value)) {
-                console.log('[TTS] Waiting for drain...');
-                await new Promise(resolve => player.stdin.once('drain', resolve));
+            // Read chunks and pipe to speaker
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                // Handle backpressure: if player.stdin.write returns false, wait for drain
+                if (!player.stdin.write(value)) {
+                    await new Promise(resolve => player.stdin.once('drain', resolve));
+                }
             }
+
+            player.stdin.end();
+
+            // Wait for ffplay to finish, but add a timeout to avoid hanging
+            await Promise.race([
+                new Promise((resolve) => player.on('close', resolve)),
+                new Promise((_, reject) => setTimeout(() => reject(new Error('ffplay timeout')), 15000))
+            ]);
+
+            console.log('[TTS] Playback finished');
+
+        } catch (err) {
+            console.error('[TTS] Error in playback:', err);
+        } finally {
+            this.isSpeaking = false;
+            this._processQueue();
         }
-
-        player.stdin.end();
-
-        // Wait for ffplay to finish, but add a timeout to avoid hanging
-        await Promise.race([
-            new Promise((resolve) => player.on('close', resolve)),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('ffplay timeout')), 10000))
-        ]);
-
-        console.log('[TTS] Playback finished');
-
-    } catch (err) {
-        console.error('[TTS] Error in playback:', err);
-    } finally {
-        this.isSpeaking = false;
-        this._processQueue();
     }
-}
 
     shutdown() {
-        console.log('\nShutting down TTS server...');
+        console.log('\n[TTS] Shutting down MOSS-TTS-Nano server...');
         if (this.pythonServer) this.pythonServer.kill();
-        process.exit(0);
     }
 
     /**
@@ -199,7 +201,6 @@ export class TTSService {
 
         let sysPython;
         try {
-            
             sysPython = isWin ? 'py' : this.getSystemPython();
         } catch (err) {
             console.error(`[${label}] No system python found:`, err.message);
@@ -224,15 +225,10 @@ export class TTSService {
                 for (const req of requirements) {
                     const packageName = req.split(/[=>\[]/)[0].trim();
                     if (!installed.includes(packageName)) {
-                        console.log(`[${label}] Missing or mismatched dependency: ${packageName}`);
+                        console.log(`[${label}] Missing dependency: ${packageName}`);
                         needsReinstall = true;
                         break;
                     }
-                }
-
-                if (installed.includes('onnxruntime') && !installed.includes('onnxruntime-gpu')) {
-                    console.log(`[${label}] Wrong ONNX Runtime detected (CPU instead of GPU). Reinstalling...`);
-                    needsReinstall = true;
                 }
             } catch (err) {
                 console.error(`[${label}] Error checking dependencies: ${err.message}`);
@@ -251,33 +247,9 @@ export class TTSService {
             execSync(`"${sysPython}" -m venv "${venvDir}"`, { cwd: componentDir, stdio: 'inherit' });
 
             if (existsSync(requirementsFile)) {
-                console.log(`[${label}] Installing requirements...`);
+                console.log(`[${label}] Installing requirements (this may take several minutes)...`);
                 execSync(`"${venvPython}" -m pip install --upgrade pip`, { cwd: componentDir, stdio: 'inherit' });
                 execSync(`"${venvPython}" -m pip install -r "${requirementsFile}"`, { cwd: componentDir, stdio: 'inherit' });
-
-                // ---- GPU onnxruntime handling ----
-                try {
-                    // Check if onnxruntime is installed and get its version
-                    const versionOutput = execSync(
-                        `"${venvPython}" -c "import onnxruntime; print(onnxruntime.__version__)"`,
-                        { encoding: 'utf-8' }
-                    ).trim();
-                    console.log(`[${label}] Detected onnxruntime version: ${versionOutput}`);
-
-                    // Uninstall the CPU version (with -y flag to avoid prompt)
-                    console.log(`[${label}] Uninstalling CPU onnxruntime...`);
-                    execSync(`"${venvPython}" -m pip uninstall -y onnxruntime`);
-                    
-                    execSync(`"${venvPython}" -m pip uninstall -y onnxruntime-gpu`);
-
-                    // Install GPU version with the same version
-                    console.log(`[${label}] Installing onnxruntime-gpu==${versionOutput}...`);
-                    execSync(`"${venvPython}" -m pip install onnxruntime-gpu==${versionOutput}`);
-                } catch (e) {
-                    // If onnxruntime wasn't installed or version detection failed, install latest GPU
-                    console.log(`[${label}] onnxruntime not found or version detection failed. Installing latest onnxruntime-gpu...`);
-                    execSync(`"${venvPython}" -m pip install onnxruntime-gpu`);
-                }
             }
         }
 

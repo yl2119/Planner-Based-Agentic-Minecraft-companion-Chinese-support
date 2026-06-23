@@ -3,5 +3,7 @@
 
     "model": "deepseek-chat",
 
+    "speak_model": "moss_tts/zh_female",
+
     "embedding": "openai"
 }

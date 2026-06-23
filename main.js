@@ -3,8 +3,8 @@ import settings from './settings.js';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { readFileSync } from 'fs';
-//support kokoro-tts
-import { TTSService } from './src/agent/kokoro/tts_launcher.js';
+//support moss-tts-nano
+import { TTSService } from './src/agent/moss_tts/tts_launcher.js';
 //suport asr
 import { launchASR, cleanupASR } from './src/asr/launcher.js'; 
 function parseArguments() {

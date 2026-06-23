@@ -430,6 +430,7 @@ export class Agent {
             if (settings.speak) {
                 // Use translated text for TTS so speech matches ASR_LANGUAGE
                 let speak_text = translated_text
+                    .replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '')  // emoji (TTS can't read them)
                     .replace(/\*\*(.+?)\*\*/g, '$1')   // bold
                     .replace(/__(.+?)__/g, '$1')         // underline
                     .replace(/\*(.+?)\*/g, '$1')         // italic

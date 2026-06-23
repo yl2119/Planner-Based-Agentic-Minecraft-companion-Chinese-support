@@ -126,11 +126,17 @@ node main.js
 ### 6. 启动 Janet / Launch Janet
 
 ```bash
-# 正常启动
+# 正常启动（GPU 加速 TTS）
 node main.js
 
-# 切换世界时启动（清除旧任务和记忆）
+# 强制 CPU 模式（GPU 不可用时）
+node main.js --tts-cpu
+
+# 切换世界（清除旧任务和记忆）
 node main.js --clean
+
+# 组合使用
+node main.js --clean --tts-cpu
 ```
 
 首次启动自动完成 / *First launch will automatically*：

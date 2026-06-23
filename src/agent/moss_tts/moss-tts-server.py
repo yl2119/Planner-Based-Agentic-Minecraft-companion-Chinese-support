@@ -196,10 +196,18 @@ async def tts_endpoint(payload: dict):
                 detail=f"Default reference audio not found: {ref_path}. Set MOSS_REF_AUDIO env var or place a .wav file in assets/audio/",
             )
 
-    # Auto-detect language: enable WeTextProcessing only for Chinese text
-    has_cjk = bool(re.search(r'[一-鿿㐀-䶿]', text))
-    enable_wetext = payload.get("enable_wetext", has_cjk)
-    lang_hint = "zh" if has_cjk else "en"
+    # Language: respect ASR_LANGUAGE env var, fallback to auto-detect from text
+    asr_lang = os.getenv("ASR_LANGUAGE", "").strip().lower()
+    if asr_lang == 'zh':
+        enable_wetext = True
+        lang_hint = "zh"
+    elif asr_lang == 'en':
+        enable_wetext = False
+        lang_hint = "en"
+    else:
+        has_cjk = bool(re.search(r'[一-鿿㐀-䶿]', text))
+        enable_wetext = payload.get("enable_wetext", has_cjk)
+        lang_hint = "zh" if has_cjk else "en"
     print(f"[MOSS-TTS] Request: text='{text[:80]}...' ref='{ref_path}' lang={lang_hint}")
 
     async def audio_stream():

@@ -1,7 +1,7 @@
 {
     "name": "deepseek",
 
-    "model": "deepseek-v4-pro",
+    "model": "deepseek-v4-flash",
 
     "speak_model": "moss_tts/zh_female",
 

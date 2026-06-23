@@ -383,7 +383,7 @@ class OrtCpuRuntime:
         options.inter_op_num_threads = 1
         providers = ["CPUExecutionProvider"] if force_cpu else self.ort_providers
         session = ort.InferenceSession(str(path_value), sess_options=options, providers=providers)
-        if self.execution_provider == EXECUTION_PROVIDER_CUDA and "CUDAExecutionProvider" not in session.get_providers():
+        if not force_cpu and self.execution_provider == EXECUTION_PROVIDER_CUDA and "CUDAExecutionProvider" not in session.get_providers():
             raise RuntimeError(
                 "CUDAExecutionProvider was requested, but ONNX Runtime created a session without CUDA support "
                 f"for {path_value}. Actual providers: {session.get_providers()}"

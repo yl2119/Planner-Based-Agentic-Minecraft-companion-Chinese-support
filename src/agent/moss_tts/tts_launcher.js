@@ -134,6 +134,15 @@ export class TTSService {
     }
 
     speak(text) {
+        // Queue management: only keep the latest pending message.
+        // When agent executes faster than TTS speaks, this prevents
+        // the user from hearing stale/historical messages.
+        // Max 2 items: 1 currently playing + 1 pending (the latest).
+        if (this.isSpeaking) {
+            const dropped = this.queue.length;
+            if (dropped > 0) console.log(`[TTS] skipping ${dropped} stale message(s), speaking latest`);
+            this.queue.length = 0;  // discard all old pending items
+        }
         this.queue.push(text);
         this._processQueue();
     }

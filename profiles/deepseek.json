@@ -1,7 +1,7 @@
 {
     "name": "deepseek",
 
-    "model": "deepseek-chat",
+    "model": "deepseek-v4-pro",
 
     "speak_model": "moss_tts/zh_female",
 

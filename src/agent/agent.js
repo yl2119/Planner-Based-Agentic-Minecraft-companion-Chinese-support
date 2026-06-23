@@ -300,8 +300,6 @@ export class Agent {
         if (from_other_bot)
             this.last_sender = source;
 
-        // Now translate the message
-        message = await handleEnglishTranslation(message);
         console.log('received message from', source, ':', message);
 
         const checkInterrupt = () => this.self_prompter.shouldInterrupt(self_prompt) || this.shut_up || convoManager.responseScheduledFor(source);
@@ -418,7 +416,8 @@ export class Agent {
             to_translate = to_translate.substring(0, translate_up_to);
             remaining = message.substring(translate_up_to);
         }
-        message = (await handleTranslation(to_translate)).trim() + " " + remaining;
+        let translated_text = (await handleTranslation(to_translate)).trim();
+        message = translated_text + " " + remaining;
         // newlines are interpreted as separate chats, which triggers spam filters. replace them with spaces
         message = message.replaceAll('\n', ' ');
 
@@ -429,8 +428,8 @@ export class Agent {
         }
         else {
             if (settings.speak) {
-                // Strip markdown formatting before TTS for clean speech
-                let speak_text = to_translate
+                // Use translated text for TTS so speech matches ASR_LANGUAGE
+                let speak_text = translated_text
                     .replace(/\*\*(.+?)\*\*/g, '$1')   // bold
                     .replace(/__(.+?)__/g, '$1')         // underline
                     .replace(/\*(.+?)\*/g, '$1')         // italic

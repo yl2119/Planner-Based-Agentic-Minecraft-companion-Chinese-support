@@ -158,10 +158,12 @@ for (let profile of settings.profiles) {
     const profile_json = JSON.parse(readFileSync(profile, 'utf8'));
     // Inject language rule into conversing prompt
     if (profile_json.conversing) {
-        // Replace any existing language rule with the configured one
+        // Remove ALL dynamic language-matching rules (hardcoded rule takes precedence)
         profile_json.conversing = profile_json.conversing
-            .replace(/- (始终使用中文回复|用玩家使用的语言回复[^\n]*|Always reply in English)[^\n]*\n?/g, '')
+            .replace(/^.*(玩家用什么语言|检测玩家消息的语言|用玩家使用的语言|match the player.s language|reply in the same language|语言规则[（(]最高优先级[）)]).*\n?/gmi, '')
+            .replace(/- (始终使用中文回复|Always reply in English)[^\n]*\n?/g, '')
             .replace(/(交流规则：\n)/, '$1' + langConfig.conversing_rule + '\n');
+        console.log(`[startup] Language set to: ${asrLang} → "${langConfig.conversing_rule}"`);
     }
     settings.profile = profile_json;
     if (!settings.init_message || settings.init_message.includes('Reply with a warm') || settings.init_message.includes('用中文回复')) {

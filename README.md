@@ -189,6 +189,12 @@ export ASR_LANGUAGE=en    # 英文 English
 - **自动检测文本语言**：中文走中文通道，英文自动切英文 / *Auto-detects text language*
 - 语音克隆：参考音频决定音色，文本语言自动适配 / *Reference audio = voice, text = language*
 - 默认 GPU 加速，`--tts-cpu` 强制 CPU / *GPU by default, --tts-cpu for CPU*
+- 默认 1.5 倍速播放，可调 / *1.5x speed, configurable via TTS_SPEED*：
+  ```bash
+  node main.js                         # 1.5x (default)
+  TTS_SPEED=1.0 node main.js           # normal speed
+  TTS_SPEED=2.0 node main.js           # 2x speed
+  ```
 - `ffplay` 播放 / *playback via ffplay*
 - 设置 `"speak": false` 关闭语音 / *disable TTS*
 

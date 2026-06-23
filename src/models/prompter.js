@@ -232,6 +232,16 @@ export class Prompter {
             }
 
             let prompt = this.profile.conversing;
+
+            // Detect player's language from latest user message and inject hint
+            const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+            if (lastUserMsg) {
+                const content = lastUserMsg.content || '';
+                const hasCJK = /[一-鿿㐀-䶿]/.test(content);
+                const langHint = hasCJK ? '中文 (zh)' : 'English';
+                prompt = `**当前玩家语言 / Current Player Language: ${langHint}**\n\n` + prompt;
+            }
+
             prompt = await this.replaceStrings(prompt, messages, this.convo_examples);
             
             // Add current task message to messages if there's an active step

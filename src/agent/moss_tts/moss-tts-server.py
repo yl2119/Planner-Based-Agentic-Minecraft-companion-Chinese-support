@@ -110,8 +110,9 @@ async def lifespan(app: FastAPI):
             _download_default_browser_onnx_assets(model_dir_path)
             print("[MOSS-TTS] Download complete")
 
-        print("[MOSS-TTS] Loading ONNX TTS runtime...")
-        _tts_runtime = OnnxTtsRuntime(model_dir=MODEL_DIR, execution_provider="cuda")
+        tts_device = os.getenv("MOSS_TTS_DEVICE", "cuda")
+        print(f"[MOSS-TTS] Loading ONNX TTS runtime (device: {tts_device})...")
+        _tts_runtime = OnnxTtsRuntime(model_dir=MODEL_DIR, execution_provider=tts_device)
         print("[MOSS-TTS] Runtime loaded, warming up...")
 
         # Warmup

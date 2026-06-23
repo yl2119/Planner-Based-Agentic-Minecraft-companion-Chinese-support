@@ -27,6 +27,11 @@ function parseArguments() {
             default: false,
             describe: 'Clear all persisted tasks and memory before starting (useful when switching worlds)',
         })
+        .option('tts-cpu', {
+            type: 'boolean',
+            default: false,
+            describe: 'Force TTS to use CPU instead of GPU (default: GPU)',
+        })
         .help()
         .alias('help', 'h')
         .parse();
@@ -99,9 +104,13 @@ if (settings.asr_enabled) {
         mindserverPort: settings.mindserver_port || 8080,
     });
 }
-// Launch Kokoro-TTS if model is selected
+// Launch TTS if enabled (default: GPU, use --tts-cpu to force CPU)
 if (settings.speak){
     try{
+        if (args.ttsCpu) {
+            process.env.MOSS_TTS_DEVICE = 'cpu';
+            console.log('[startup] TTS device forced to CPU');
+        }
         await new TTSService().boot()
     }catch(err){
         console.log("Error booting TTS ",err)

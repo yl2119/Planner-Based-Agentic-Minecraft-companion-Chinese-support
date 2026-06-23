@@ -1,5 +1,5 @@
 # moss-tts-server.py
-# FastAPI server wrapping MOSS-TTS-Nano ONNX for Chinese TTS
+# FastAPI server wrapping bundled MOSS-TTS-Nano ONNX for Chinese TTS
 # Port 8001 — separate from original Kokoro (8000)
 #
 # API:
@@ -7,19 +7,25 @@
 #   GET  /health                   →  {"status": "ok"}
 #
 # Default ref audio: assets/audio/zh_1.wav  (or $MOSS_REF_AUDIO)
+#
+# Models auto-download from HuggingFace on first use.
+# For users in China, set HF_ENDPOINT=https://hf-mirror.com
 
 import os
 import sys
 import io
 import json
-import subprocess
-import tempfile
 import time
 import wave
 import numpy as np
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import StreamingResponse, JSONResponse, Response
+
+# Ensure the bundled MOSS-TTS-Nano is on the path
+_BUNDLED_DIR = Path(__file__).resolve().parent / "MOSS-TTS-Nano"
+sys.path.insert(0, str(_BUNDLED_DIR))
+
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
 from contextlib import asynccontextmanager
@@ -30,127 +36,85 @@ DEFAULT_REF_AUDIO = os.getenv(
     "MOSS_REF_AUDIO",
     str(PROJECT_ROOT / "assets" / "audio" / "zh_1.wav"),
 )
-# Directory for ONNX model cache
-MODEL_DIR = os.getenv("MOSS_MODEL_DIR", str(PROJECT_ROOT / "models" / "moss_tts"))
-os.makedirs(MODEL_DIR, exist_ok=True)
+# Model cache: use project-level models dir, configurable via env
+MODEL_DIR = os.getenv(
+    "MOSS_MODEL_DIR",
+    str(PROJECT_ROOT / "models" / "moss_tts"),
+)
 
 SAMPLE_RATE = 48000
 CHANNELS = 2
 
 # ---- helpers ----
 
-def wav_bytes_to_pcm(wav_bytes: bytes) -> bytes:
-    """Convert a WAV file (bytes) into raw s16le PCM samples."""
-    with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
-        assert wf.getsampwidth() == 2, "Expected 16-bit WAV"
-        assert wf.getnchannels() == CHANNELS, f"Expected {CHANNELS} channels"
-        assert wf.getframerate() == SAMPLE_RATE, f"Expected {SAMPLE_RATE} Hz"
-        return wf.readframes(wf.getnframes())
-
-
 def split_sentences(text: str) -> list:
     """Split Chinese/English text into sentences."""
     import re
-    # Split on Chinese/English punctuation
     sentences = re.split(r"(?<=[。！？.!?])\s*", text)
     return [s.strip() for s in sentences if s.strip()]
 
 
-def generate_audio(text: str, ref_audio: str) -> bytes:
-    """Generate WAV audio using moss-tts-nano CLI with ONNX backend."""
-    # Check CLI availability
-    try:
-        subprocess.run(
-            ["moss-tts-nano", "--help"],
-            capture_output=True,
-            timeout=10,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        raise RuntimeError(
-            "moss-tts-nano CLI not found. Install with: pip install moss-tts-nano"
-        )
+def wav_bytes_to_pcm(wav_bytes: bytes) -> bytes:
+    """Convert WAV bytes to raw s16le PCM."""
+    with wave.open(io.BytesIO(wav_bytes), "rb") as wf:
+        return wf.readframes(wf.getnframes())
 
-    if not os.path.exists(ref_audio):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Reference audio not found: {ref_audio}",
-        )
 
-    # Use a temp file for the output
-    fd, output_path = tempfile.mkstemp(suffix=".wav")
-    os.close(fd)
-
-    try:
-        cmd = [
-            "moss-tts-nano", "generate",
-            "--backend", "onnx",
-            "--prompt-speech", ref_audio,
-            "--text", text,
-            "--output", output_path,
-        ]
-        print(f"[MOSS-TTS] Generating: {text[:60]}...")
-        start = time.time()
-
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            env={**os.environ, "MOSS_MODEL_DIR": MODEL_DIR},
-        )
-
-        elapsed = time.time() - start
-
-        if result.returncode != 0:
-            print(f"[MOSS-TTS] CLI stderr: {result.stderr}")
-            raise RuntimeError(f"moss-tts-nano exited with code {result.returncode}: {result.stderr[:500]}")
-
-        print(f"[MOSS-TTS] Generated in {elapsed:.1f}s")
-
-        with open(output_path, "rb") as f:
-            wav_data = f.read()
-
-        return wav_data
-
-    finally:
-        try:
-            os.unlink(output_path)
-        except OSError:
-            pass
+def waveform_to_wav_bytes(waveform: np.ndarray, sr: int) -> bytes:
+    """Convert numpy waveform to WAV bytes."""
+    buf = io.BytesIO()
+    # waveform shape: (samples, channels) or (samples,)
+    if waveform.ndim == 1:
+        waveform = waveform.reshape(-1, 1)
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(waveform.shape[1])
+        wf.setsampwidth(2)  # 16-bit
+        wf.setframerate(sr)
+        audio_int16 = (np.clip(waveform, -1.0, 1.0) * 32767).astype(np.int16)
+        wf.writeframes(audio_int16.tobytes())
+    return buf.getvalue()
 
 
 # ---- lifespan ----
+_tts_runtime = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _tts_runtime
+    from onnx_tts_runtime import OnnxTtsRuntime
+
     print("[MOSS-TTS] Server starting...")
     print(f"[MOSS-TTS] Default ref audio: {DEFAULT_REF_AUDIO}")
     print(f"[MOSS-TTS] Model cache dir: {MODEL_DIR}")
 
-    # Check that CLI works
-    try:
-        subprocess.run(
-            ["moss-tts-nano", "--help"],
-            capture_output=True,
-            timeout=15,
-        )
-        print("[MOSS-TTS] CLI available")
-    except FileNotFoundError:
-        print("[MOSS-TTS] WARNING: moss-tts-nano CLI not found!")
-        print("[MOSS-TTS] Install with: pip install moss-tts-nano")
-    except subprocess.TimeoutExpired:
-        print("[MOSS-TTS] WARNING: moss-tts-nano --help timed out (first run may download models)")
-
-    # Quick warmup if ref audio exists
-    if os.path.exists(DEFAULT_REF_AUDIO):
-        print("[MOSS-TTS] Warming up with short generation...")
-        try:
-            generate_audio("你好", DEFAULT_REF_AUDIO)
-            print("[MOSS-TTS] Warmup complete, server ready")
-        except Exception as e:
-            print(f"[MOSS-TTS] Warmup failed (will retry on first request): {e}")
+    # HuggingFace mirror hint for China users
+    hf_endpoint = os.getenv("HF_ENDPOINT", "")
+    if hf_endpoint:
+        print(f"[MOSS-TTS] Using HF endpoint: {hf_endpoint}")
     else:
-        print(f"[MOSS-TTS] Default ref audio not found at {DEFAULT_REF_AUDIO}")
-        print("[MOSS-TTS] Server will start but requests will fail until a valid ref_audio is provided")
+        print("[MOSS-TTS] Tip: set HF_ENDPOINT=https://hf-mirror.com if you are in China")
+
+    try:
+        print("[MOSS-TTS] Loading ONNX TTS runtime (first run downloads ~500MB models)...")
+        _tts_runtime = OnnxTtsRuntime(model_dir=MODEL_DIR)
+        print("[MOSS-TTS] Runtime loaded, warming up...")
+
+        # Warmup
+        if os.path.exists(DEFAULT_REF_AUDIO):
+            _tts_runtime.synthesize(
+                text="你好",
+                prompt_audio_path=DEFAULT_REF_AUDIO,
+                streaming=False,
+            )
+            print("[MOSS-TTS] Warmup complete, server ready")
+        else:
+            print(f"[MOSS-TTS] WARNING: default ref audio not found at {DEFAULT_REF_AUDIO}")
+            print("[MOSS-TTS] Server will start but requests will fail without valid ref_audio")
+    except Exception as e:
+        print(f"[MOSS-TTS] Failed to load runtime: {e}")
+        print("[MOSS-TTS] Make sure Python 3.11+ is used and dependencies are installed")
+        raise
 
     yield
     print("[MOSS-TTS] Shutting down")
@@ -170,53 +134,71 @@ app.add_middleware(
 @app.get("/health")
 async def health():
     ref_exists = os.path.exists(DEFAULT_REF_AUDIO)
+    hf_endpoint = os.getenv("HF_ENDPOINT", "https://huggingface.co")
     return JSONResponse({
         "status": "ok",
         "ref_audio": DEFAULT_REF_AUDIO,
         "ref_audio_exists": ref_exists,
+        "hf_endpoint": hf_endpoint,
+        "model_dir": MODEL_DIR,
     })
 
 
 @app.post("/tts")
 async def tts_endpoint(payload: dict):
+    global _tts_runtime
+
     text = payload.get("text", "").strip()
     ref_audio = payload.get("ref_audio", DEFAULT_REF_AUDIO)
 
     if not text:
         raise HTTPException(status_code=400, detail="text is required")
 
-    # Resolve ref_audio: if it's a bare filename, look in assets/audio/
+    # Resolve ref_audio path
+    ref_path = None
     if ref_audio and not os.path.isabs(ref_audio):
         candidate = PROJECT_ROOT / "assets" / "audio" / ref_audio
         if candidate.exists():
-            ref_audio = str(candidate)
-        elif not os.path.exists(ref_audio):
-            # try as-is (relative to cwd)
-            if not os.path.exists(ref_audio):
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Reference audio not found: {ref_audio} (also checked {candidate})",
-                )
+            ref_path = str(candidate)
+        elif os.path.exists(ref_audio):
+            ref_path = ref_audio
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Reference audio not found: {ref_audio} (also checked {candidate})",
+            )
+    elif ref_audio:
+        ref_path = ref_audio if os.path.exists(ref_audio) else None
+        if not ref_path:
+            raise HTTPException(status_code=400, detail=f"Reference audio not found: {ref_audio}")
 
-    print(f"[MOSS-TTS] Request: text='{text[:80]}...' ref='{ref_audio}'")
+    if not ref_path:
+        ref_path = DEFAULT_REF_AUDIO
+        if not os.path.exists(ref_path):
+            raise HTTPException(
+                status_code=500,
+                detail=f"Default reference audio not found: {ref_path}. Set MOSS_REF_AUDIO env var or place a .wav file in assets/audio/",
+            )
 
-    # Split long text into sentences for better quality
-    sentences = split_sentences(text)
-    if not sentences:
-        sentences = [text]
+    print(f"[MOSS-TTS] Request: text='{text[:80]}...' ref='{ref_path}'")
 
     async def audio_stream():
-        for sentence in sentences:
-            if not sentence.strip():
-                continue
-            try:
-                wav_bytes = generate_audio(sentence, ref_audio)
-                pcm_bytes = wav_bytes_to_pcm(wav_bytes)
-                yield pcm_bytes
-            except Exception as e:
-                print(f"[MOSS-TTS] Error generating sentence: {e}")
-                # Continue with remaining sentences rather than failing entirely
-                continue
+        try:
+            result = _tts_runtime.synthesize(
+                text=text,
+                prompt_audio_path=ref_path,
+                streaming=False,
+            )
+            waveform = result["waveform"]
+            sr = result["sample_rate"]
+
+            wav_bytes = waveform_to_wav_bytes(waveform, sr)
+            pcm = wav_bytes_to_pcm(wav_bytes)
+            yield pcm
+
+        except Exception as e:
+            print(f"[MOSS-TTS] Generation error: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
 
     return StreamingResponse(
         audio_stream(),

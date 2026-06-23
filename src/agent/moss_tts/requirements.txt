@@ -1,4 +1,8 @@
 fastapi
 uvicorn[standard]
 numpy
-git+https://github.com/OpenMOSS/MOSS-TTS-Nano.git
+soundfile
+onnxruntime>=1.20.0
+
+# MOSS-TTS-Nano bundled locally (no GitHub access needed)
+./MOSS-TTS-Nano

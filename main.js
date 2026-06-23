@@ -3,6 +3,7 @@ import settings from './settings.js';
 import yargs from 'yargs';
 import { hideBin } from 'yargs/helpers';
 import { readFileSync, existsSync, rmSync } from 'fs';
+import { execSync } from 'child_process';
 //support moss-tts-nano
 import { TTSService } from './src/agent/moss_tts/tts_launcher.js';
 //suport asr
@@ -70,6 +71,19 @@ if (process.env.NUM_EXAMPLES) {
 if (process.env.LOG_ALL) {
     settings.log_all_prompts = process.env.LOG_ALL;
 }
+
+// Auto-cleanup leftover ports from previous runs
+try {
+    const ports = [settings.mindserver_port || 8080, settings.asr_port || 8090, 8001];
+    const pids = execSync(`lsof -ti:${ports.join(',')} 2>/dev/null || true`, { encoding: 'utf-8' }).trim();
+    if (pids) {
+        console.log('[startup] Cleaning up leftover processes...');
+        pids.split('\n').forEach(pid => {
+            try { process.kill(parseInt(pid), 'SIGKILL'); } catch {}
+        });
+        console.log('[startup] Ports cleared');
+    }
+} catch {}
 
 // Initialize MindServer BEFORE launching ASR (Voice Bridge needs it to connect)
 Mindcraft.init(true, settings.mindserver_port, settings.auto_open_ui);
